@@ -1,5 +1,7 @@
 import { SUMP, createMap, escapeHtml, getJson, maplibregl, stateColorExpr } from './common.js';
 
+// Poloha v URL (#zoom/lat/lng), aby šel výřez sdílet. Bez ní se mapa přiblíží na domy.
+const hadHash = /^#[\d.]+\/[\d.-]+\/[\d.-]+/.test(location.hash);
 const map = createMap('map', { hash: true });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 map.addControl(new maplibregl.GeolocateControl({ fitBoundsOptions: { maxZoom: 14 } }), 'top-right');
@@ -33,7 +35,7 @@ const refresh = () => {
 map.on('load', async () => {
   all = await getJson('/api/houses.geojson');
 
-  map.addSource('houses', { type: 'geojson', data: filtered(), cluster: true, clusterRadius: 45, clusterMaxZoom: 13 });
+  map.addSource('houses', { type: 'geojson', data: filtered(), cluster: true, clusterRadius: 40, clusterMaxZoom: 15 });
 
   map.addLayer({
     id: 'clusters',
@@ -41,10 +43,10 @@ map.on('load', async () => {
     source: 'houses',
     filter: ['has', 'point_count'],
     paint: {
-      'circle-color': '#1f3a5f',
-      'circle-opacity': 0.85,
+      'circle-color': '#d9822b',
+      'circle-opacity': 0.92,
       'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 50, 26, 200, 32],
-      'circle-stroke-width': 2,
+      'circle-stroke-width': 3,
       'circle-stroke-color': '#fff',
     },
   });
@@ -70,6 +72,12 @@ map.on('load', async () => {
   });
 
   refresh();
+
+  if (!hadHash && all.features.length) {
+    const bounds = new maplibregl.LngLatBounds();
+    for (const f of all.features) bounds.extend(f.geometry.coordinates);
+    map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 0 });
+  }
 
   map.on('click', 'clusters', async (e) => {
     const f = e.features[0];

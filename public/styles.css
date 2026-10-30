@@ -274,3 +274,12 @@ form.inline { display: inline; }
 
 .map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; margin: -0.5rem 0 0.75rem; }
 .map-legend .dot + .dot { margin-left: 0.75rem; }
+
+/* Schvalování po jednom */
+.review { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; }
+@media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+.review-media { display: grid; gap: 1rem; align-content: start; }
+.review-info h3 { margin: 0.2rem 0; font-size: 1.4rem; }
+.review-info .meta { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+.review .mini-map { height: 200px; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0.5rem; }

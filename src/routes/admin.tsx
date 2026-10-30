@@ -2,12 +2,12 @@ import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
 import { MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
 import type { AppEnv } from '../env';
-import { addRevision, addressLine, modificationStatements, type House, type Photo } from '../db';
+import { addRevision, addressLine, getModifications, housesNear, modificationStatements, type House, type Photo } from '../db';
 import { EDITABLE_FIELDS, FIELD_LABELS } from '../input';
 import { requireAccess } from '../lib/access';
 import { mapyLink, streetViewLink } from '../lib/streetview';
-import { formatDate, slugify } from '../lib/util';
-import { StateBadge } from '../views/components';
+import { distance, formatDate, slugify } from '../lib/util';
+import { FacadeSwatch, ModList, StateBadge, panoUrl } from '../views/components';
 import { Layout } from '../views/layout';
 import { servePhoto } from './files';
 
@@ -39,8 +39,9 @@ const formatValue = (field: string, v: unknown) => {
 
 admin.get('/', async (c) => {
   const db = c.env.DB;
-  const [houses, photos, edits, reports] = await db.batch<Record<string, unknown>>([
-    db.prepare(`SELECT * FROM houses WHERE status = 'pending' ORDER BY id LIMIT 50`),
+  const skip = Number.parseInt(c.req.query('po') ?? '0', 10) || 0;
+  const [houses, photos, edits, reports, pendingCount] = await db.batch<Record<string, unknown>>([
+    db.prepare(`SELECT * FROM houses WHERE status = 'pending' AND id > ? ORDER BY id LIMIT 1`).bind(skip),
     db.prepare(
       `SELECT p.*, h.status AS house_status, h.municipality, h.street, h.house_number, h.hide_number
          FROM photos p JOIN houses h ON h.id = p.house_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 100`,
@@ -53,8 +54,24 @@ admin.get('/', async (c) => {
       `SELECT r.*, h.municipality, h.street, h.house_number, h.hide_number, h.status AS house_status
          FROM reports r JOIN houses h ON h.id = r.house_id WHERE r.status = 'open' ORDER BY r.id LIMIT 50`,
     ),
+    db.prepare(`SELECT count(*) AS n, sum(id <= ?) AS skipped FROM houses WHERE status = 'pending'`).bind(skip),
   ]);
-  const pendingHouses = houses.results as unknown as House[];
+  const current = (houses.results as unknown as House[])[0];
+  const { n: pendingTotal, skipped } = pendingCount.results[0] as { n: number; skipped: number | null };
+  // Pořadí aktuálního domu ve frontě (přeskočené jsou před ním).
+  const position = (skipped ?? 0) + 1;
+  const [currentMods, neighbours] = current
+    ? await Promise.all([
+        getModifications(db, current.id),
+        housesNear(db, current.lat, current.lng, 40).then((rows) =>
+          rows
+            .filter((r) => r.id !== current.id)
+            .map((r) => ({ ...r, distance: Math.round(distance(current.lat, current.lng, r.lat, r.lng)) }))
+            .filter((r) => r.distance <= 40),
+        ),
+      ])
+    : [[], []];
+  const currentPano = current ? panoUrl(c.env, current) : null;
   const allPhotos = photos.results as unknown as (Photo & { house_status: string } & House)[];
   // Fotky nových domů ukazujeme u domu, ostatní zvlášť.
   const photosByHouse = new Map<number, Photo[]>();
@@ -74,11 +91,11 @@ admin.get('/', async (c) => {
   } & House)[];
 
   return c.html(
-    <Layout env={c.env} path="/admin" title="Moderace" scripts={['/js/admin.js']}>
+    <Layout env={c.env} path="/admin" title="Moderace" map scripts={['/js/admin.js', '/js/house.js']}>
       <div class="page admin">
         <h1>Moderace</h1>
         <nav class="admin-nav">
-          <a href="#domy">Nové domy ({pendingHouses.length})</a>
+          <a href="#domy">Nové domy ({pendingTotal})</a>
           <a href="#fotky">Fotky ({loosePhotos.length})</a>
           <a href="#upravy">Návrhy úprav ({editRows.length})</a>
           <a href="#nahlaseni">Nahlášení ({reportRows.length})</a>
@@ -86,37 +103,103 @@ admin.get('/', async (c) => {
 
         <section id="domy">
           <h2>Nové domy</h2>
-          {pendingHouses.length === 0 && <p class="muted">Nic ke schválení.</p>}
-          {pendingHouses.map((h) => (
-            <article class="mod-item">
-              <header>
-                <strong>#{h.id} {addressLine(h)}</strong> <StateBadge state={h.state} />
-                <span class="muted">
-                  {h.district} · {h.region} · {h.country.toUpperCase()} · {formatDate(h.created_at)}
-                </span>
-              </header>
-              <p>
-                <a href={streetViewLink(h)} target="_blank" rel="noopener">Street View</a> ·{' '}
-                <a href={mapyLink(h)} target="_blank" rel="noopener">Mapy.cz</a> · {h.lat.toFixed(5)}, {h.lng.toFixed(5)}
-                {h.hide_number ? ' · číslo skryté' : ''}
-              </p>
-              {h.note && <p class="note">{h.note}</p>}
-              {h.link && <p><a href={h.link} target="_blank" rel="noopener nofollow">{h.link}</a></p>}
-              <div class="mod-photos">
-                {(photosByHouse.get(h.id) ?? []).map((p) => (
-                  <figure>
-                    <a href={adminPhoto(p.r2_key)} target="_blank"><img src={adminPhoto(p.r2_key)} alt="" /></a>
-                    <figcaption>{PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} {p.year_taken ?? ''}</figcaption>
-                    <Action action={`/admin/photos/${p.id}/reject`} label="Zamítnout fotku" />
-                  </figure>
-                ))}
+          {!current && (
+            <p class="muted">
+              {pendingTotal ? <a href="/admin#domy">Začít znovu od prvního přeskočeného</a> : 'Nic ke schválení.'}
+            </p>
+          )}
+          {current && (
+            <article
+              class="review house"
+              data-lat={current.lat}
+              data-lng={current.lng}
+              data-state={current.state}
+            >
+              <div class="review-media">
+                {currentPano ? (
+                  <div class="sv-frame">
+                    <img src={currentPano} alt="Pohled z ulice" onerror="this.parentElement.classList.add('pano-missing')" />
+                    <div class="sv-placeholder">Panorama tu není</div>
+                  </div>
+                ) : (
+                  <p class="muted">Bez klíče Mapy.com se panorama nezobrazí.</p>
+                )}
+                {(photosByHouse.get(current.id) ?? []).length > 0 && (
+                  <div class="mod-photos">
+                    {(photosByHouse.get(current.id) ?? []).map((p) => (
+                      <figure>
+                        <a href={adminPhoto(p.r2_key)} target="_blank">
+                          <img src={adminPhoto(p.r2_key)} alt="" />
+                        </a>
+                        <figcaption>
+                          {PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} {p.year_taken ?? ''}
+                        </figcaption>
+                        <Action action={`/admin/photos/${p.id}/reject`} label="Zamítnout fotku" />
+                      </figure>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div class="actions">
-                <Action action={`/admin/houses/${h.id}/approve`} label="Schválit (i s fotkami)" kind="btn-primary" />
-                <Action action={`/admin/houses/${h.id}/reject`} label="Zamítnout a smazat" kind="btn-danger" confirm="Opravdu smazat záznam i fotky?" />
+              <div class="review-info">
+                <p class="muted">
+                  Dům {position} z {pendingTotal} čekajících · #{current.id} · přidáno{' '}
+                  {formatDate(current.created_at)}
+                </p>
+                <h3>{addressLine(current)}</h3>
+                <p class="meta">
+                  <StateBadge state={current.state} /> <FacadeSwatch color={current.facade_color} />
+                </p>
+                <p class="muted">
+                  {[current.district, current.region, current.country.toUpperCase()].filter(Boolean).join(' · ')}
+                  {current.hide_number ? ' · číslo skryté' : ''}
+                </p>
+                <ModList mods={currentMods} />
+                {(current.year_built || current.year_renovated) && (
+                  <p>
+                    {current.year_built ? `Postaveno ${current.year_built}. ` : ''}
+                    {current.year_renovated ? `Rekonstrukce ${current.year_renovated}.` : ''}
+                  </p>
+                )}
+                {current.note && <p class="note">{current.note}</p>}
+                {current.link && (
+                  <p>
+                    <a href={current.link} target="_blank" rel="noopener nofollow">
+                      {current.link}
+                    </a>
+                  </p>
+                )}
+                {neighbours.length > 0 && (
+                  <div class="alert">
+                    <strong>Možná duplicita, v okolí už je:</strong>
+                    <ul>
+                      {neighbours.map((n) => (
+                        <li>
+                          #{n.id} {addressLine(n)} ({n.status === 'approved' ? 'na mapě' : 'čeká'}, {n.distance} m)
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <div id="mini-map" class="mini-map"></div>
+                <div class="review-actions">
+                  <Action action={`/admin/houses/${current.id}/approve`} label="✓ Schválit (A)" kind="btn-primary btn-lg" />
+                  <Action
+                    action={`/admin/houses/${current.id}/reject`}
+                    label="✕ Zamítnout (Z)"
+                    kind="btn-danger btn-lg"
+                    confirm="Opravdu smazat záznam i fotky?"
+                  />
+                  <a class="btn btn-lg" href={`/admin?po=${current.id}#domy`} data-key="skip">
+                    Přeskočit (→)
+                  </a>
+                </div>
+                <p class="muted small">
+                  <a href={mapyLink(current)} target="_blank" rel="noopener">Procházet panorama na Mapy.cz</a> ·{' '}
+                  <a href={streetViewLink(current)} target="_blank" rel="noopener">Google Street View</a>
+                </p>
               </div>
             </article>
-          ))}
+          )}
         </section>
 
         <section id="fotky">
