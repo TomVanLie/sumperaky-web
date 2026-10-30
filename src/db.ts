@@ -14,6 +14,7 @@ export type House = {
   district: string | null;
   region: string | null;
   state: string;
+  design: string;
   roof: string | null;
   facade_color: string | null;
   year_built: number | null;
@@ -56,13 +57,13 @@ export const mapPoints = async (db: D1Database) => {
               (SELECT group_concat(modification) FROM house_modifications m WHERE m.house_id = h.id) AS mods,
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo,
-              h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color
+              h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color, h.design
          FROM houses h WHERE h.status = 'approved'`,
     )
     .all<
       Pick<
         House,
-        'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region' | 'facade_color'
+        'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region' | 'facade_color' | 'design'
       > & {
         mods: string | null;
         photo: string | null;
@@ -124,9 +125,9 @@ export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: 
   const row = await db
     .prepare(
       `INSERT INTO houses (lat, lng, country, street, house_number, hide_number, municipality, municipality_slug,
-                           district, region, state, roof, facade_color, year_built, year_renovated, note, link,
+                           district, region, state, design, roof, facade_color, year_built, year_renovated, note, link,
                            sv_heading, sv_pitch, submitter_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
       h.lat,
@@ -140,6 +141,7 @@ export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: 
       h.district,
       h.region,
       h.state,
+      h.design,
       h.roof,
       h.facade_color,
       h.year_built,

@@ -1,4 +1,4 @@
-import { BOUNDS, FACADE_COLORS, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
+import { BOUNDS, DESIGNS, FACADE_COLORS, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
 import { int, num, slugify, str, url } from './lib/util';
 
 export type HouseInput = {
@@ -13,6 +13,7 @@ export type HouseInput = {
   district: string | null;
   region: string | null;
   state: string;
+  design: string;
   modifications: string[];
   roof: string | null;
   facade_color: string | null;
@@ -33,6 +34,7 @@ export const EDITABLE_FIELDS = [
   'hide_number',
   'municipality',
   'state',
+  'design',
   'modifications',
   'roof',
   'facade_color',
@@ -80,6 +82,7 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
       district: str(form.district, 120),
       region: str(form.region, 120),
       state: isKey(STATES, form.state) ? form.state : 'unknown',
+      design: isKey(DESIGNS, form.design) ? form.design : 'original',
       modifications,
       roof: isKey(ROOFS, form.roof) ? form.roof : null,
       facade_color: isKey(FACADE_COLORS, form.facade_color) ? form.facade_color : null,
@@ -118,6 +121,7 @@ export const FIELD_LABELS: Record<string, string> = {
   hide_number: 'Skrýt číslo domu',
   municipality: 'Obec',
   state: 'Stav',
+  design: 'Návrh',
   modifications: 'Úpravy',
   roof: 'Střešní krytina',
   facade_color: 'Barva fasády',

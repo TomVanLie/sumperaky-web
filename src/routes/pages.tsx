@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { FACADE_COLORS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOFS, STATES, isKey } from '../domain';
+import { DESIGNS, FACADE_COLORS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOFS, STATES, isKey } from '../domain';
 import type { AppEnv } from '../env';
 import {
   addressLine,
@@ -56,6 +56,15 @@ pages.get('/', async (c) => {
                 </label>
               ))}
             </fieldset>
+            <label>
+              Návrh
+              <select name="design">
+                <option value="">Jakýkoli</option>
+                {Object.entries(DESIGNS).map(([k, l]) => (
+                  <option value={k}>{l}</option>
+                ))}
+              </select>
+            </label>
             <label>
               Úprava
               <select name="mod">
@@ -171,6 +180,8 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
             <dl class="facts">
               <dt>Stav</dt>
               <dd>{STATES[house.state as keyof typeof STATES]?.label}</dd>
+              <dt>Návrh</dt>
+              <dd>{DESIGNS[house.design as keyof typeof DESIGNS]}</dd>
               {house.year_built && (
                 <>
                   <dt>Rok stavby</dt>
@@ -320,6 +331,18 @@ const HouseFields = ({ house, mods, withState = true }: { house?: Partial<House>
         </select>
       </label>
     )}
+    {withState && (
+      <label>
+        Návrh
+        <select name="design">
+          {Object.entries(DESIGNS).map(([k, l]) => (
+            <option value={k} selected={(house?.design ?? 'original') === k}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+    )}
     <fieldset class="mods">
       <legend>Typ úprav (lze vybrat více)</legend>
       {Object.entries(MODIFICATIONS).map(([k, l]) => (
@@ -445,6 +468,16 @@ pages.get('/pridat', (c) =>
                   <label>
                     <input type="radio" name="state" value={k} checked={k === 'unknown'} />
                     <span>{k === 'unknown' ? 'Nevím' : STATES[k].label}</span>
+                  </label>
+                ))}
+              </fieldset>
+
+              <fieldset class="chips">
+                <legend>Návrh</legend>
+                {Object.entries(DESIGNS).map(([k, l]) => (
+                  <label>
+                    <input type="radio" name="design" value={k} checked={k === 'original'} />
+                    <span>{l}</span>
                   </label>
                 ))}
               </fieldset>
@@ -653,8 +686,9 @@ pages.get('/promeny', async (c) => {
 
 pages.get('/statistiky', async (c) => {
   const db = c.env.DB;
-  const [byState, byRegion, byMod, byYear, byColor, totals] = await db.batch<Record<string, unknown>>([
+  const [byState, byDesign, byRegion, byMod, byYear, byColor, totals] = await db.batch<Record<string, unknown>>([
     db.prepare(`SELECT state AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY state ORDER BY n DESC`),
+    db.prepare(`SELECT design AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY design ORDER BY n DESC`),
     db.prepare(
       `SELECT coalesce(region, 'Neuvedeno') AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY k ORDER BY n DESC`,
     ),
@@ -704,6 +738,10 @@ pages.get('/statistiky', async (c) => {
               n: r.n,
               color: STATES[r.k as keyof typeof STATES]?.color,
             }))}
+          />
+          <Bars
+            title="Podle návrhu"
+            rows={rows(byDesign).map((r) => ({ label: DESIGNS[r.k as keyof typeof DESIGNS] ?? String(r.k), n: r.n }))}
           />
           <Bars
             title="Barvy fasád"

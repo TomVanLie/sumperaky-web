@@ -12,13 +12,18 @@ const filtered = () => {
   const states = new Set(new FormData(form).getAll('state'));
   const mod = form.mod.value;
   const color = form.color.value;
+  const design = form.design.value;
   const photoOnly = form.photo.checked;
   return {
     type: 'FeatureCollection',
     features: all.features.filter((f) => {
       const p = f.properties;
       return (
-        states.has(p.s) && (!mod || p.m.split(',').includes(mod)) && (!color || p.c === color) && (!photoOnly || p.p)
+        states.has(p.s) &&
+        (!mod || p.m.split(',').includes(mod)) &&
+        (!color || p.c === color) &&
+        (!design || p.d === design) &&
+        (!photoOnly || p.p)
       );
     }),
   };

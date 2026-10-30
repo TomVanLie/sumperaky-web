@@ -283,3 +283,4 @@ form.inline { display: inline; }
 .review-info .meta { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
 .review .mini-map { height: 200px; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 0.5rem; }
+.tag { display: inline-block; background: #eef2f7; border-radius: 6px; padding: 0.1rem 0.55rem; font-size: 0.85rem; }

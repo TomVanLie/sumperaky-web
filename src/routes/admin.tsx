@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
-import { MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
+import { DESIGNS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
 import type { AppEnv } from '../env';
 import { addRevision, addressLine, getModifications, housesNear, modificationStatements, type House, type Photo } from '../db';
 import { EDITABLE_FIELDS, FIELD_LABELS } from '../input';
@@ -31,6 +31,7 @@ const Action = ({ action, label, kind, confirm }: { action: string; label: strin
 const formatValue = (field: string, v: unknown) => {
   if (v === null || v === undefined || v === '') return '(prázdné)';
   if (field === 'state') return STATES[v as keyof typeof STATES]?.label ?? String(v);
+  if (field === 'design') return DESIGNS[v as keyof typeof DESIGNS] ?? String(v);
   if (field === 'modifications')
     return (v as string[]).map((m) => MODIFICATIONS[m as keyof typeof MODIFICATIONS] ?? m).join(', ') || '(žádné)';
   if (field === 'hide_number') return v ? 'ano' : 'ne';
@@ -148,6 +149,7 @@ admin.get('/', async (c) => {
                 <h3>{addressLine(current)}</h3>
                 <p class="meta">
                   <StateBadge state={current.state} /> <FacadeSwatch color={current.facade_color} />
+                  <span class="tag">{DESIGNS[current.design as keyof typeof DESIGNS]}</span>
                 </p>
                 <p class="muted">
                   {[current.district, current.region, current.country.toUpperCase()].filter(Boolean).join(' · ')}

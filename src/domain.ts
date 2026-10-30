@@ -9,6 +9,11 @@ export const STATES = {
   unknown: { label: 'Neurčeno', color: '#4a6fa5' },
 } as const;
 
+export const DESIGNS = {
+  original: 'Blízký původnímu návrhu (Vaněk)',
+  atypical: 'Atypicky upravený',
+} as const;
+
 // Barvy fasád. Barva vybraná kliknutím do panoramatu se zaokrouhlí na nejbližší z nich.
 export const FACADE_COLORS = {
   white: { label: 'Bílá', hex: '#f3f2ec' },
@@ -26,8 +31,6 @@ export const FACADE_COLORS = {
 } as const;
 
 export const MODIFICATIONS = {
-  original_design: 'Původní návrh',
-  modified_design: 'Upravený návrh už při stavbě',
   both_floors_living: 'Obytné horní i dolní patro',
   insulation: 'Zateplení a nová fasáda',
   windows: 'Nová okna',
@@ -87,6 +90,7 @@ export const clientConfig = () => ({
   states: STATES,
   modifications: MODIFICATIONS,
   roofs: ROOFS,
+  designs: DESIGNS,
   facadeColors: FACADE_COLORS,
   photoPhases: PHOTO_PHASES,
   bounds: BOUNDS,

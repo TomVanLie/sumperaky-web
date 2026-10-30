@@ -33,6 +33,7 @@ type ExportRow = {
   district: string | null;
   region: string | null;
   state: string;
+  design: string;
   modifications: string | null;
   roof: string | null;
   facade_color: string | null;
@@ -46,7 +47,7 @@ const exportRows = async (db: D1Database) => {
     .prepare(
       `SELECT h.id, round(h.lat, 6) AS lat, round(h.lng, 6) AS lng, h.country, h.street,
               CASE WHEN h.hide_number THEN NULL ELSE h.house_number END AS house_number,
-              h.municipality, h.district, h.region, h.state,
+              h.municipality, h.district, h.region, h.state, h.design,
               (SELECT group_concat(modification, ';') FROM house_modifications m WHERE m.house_id = h.id) AS modifications,
               h.roof, h.facade_color, h.year_built, h.year_renovated, h.updated_at
          FROM houses h WHERE h.status = 'approved' ORDER BY h.id`,

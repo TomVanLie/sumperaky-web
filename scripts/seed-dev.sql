@@ -8,9 +8,9 @@ VALUES
   (5, 'pending', 49.9690, 16.9700, 'cz', 'Ukázková', '5', 'Šumperk', 'sumperk', 'okres Šumperk', 'Olomoucký kraj', 'unknown', NULL, NULL, NULL, NULL, 'Čeká na schválení.', NULL);
 
 INSERT INTO house_modifications (house_id, modification) VALUES
-  (1, 'original_design'),
   (2, 'both_floors_living'), (2, 'insulation'), (2, 'windows'), (2, 'solar'),
-  (3, 'modified_design'),
   (4, 'insulation'), (4, 'dormers');
+
+UPDATE houses SET design = 'atypical' WHERE id = 3;
 
 INSERT INTO revisions (house_id, summary) VALUES (1, 'Dům přidán'), (2, 'Dům přidán'), (3, 'Dům přidán'), (4, 'Dům přidán');
