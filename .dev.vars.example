@@ -1,0 +1,7 @@
+# Zkopíruj do .dev.vars pro lokální vývoj.
+ENVIRONMENT=development
+# Testovací tajný klíč Turnstile (vždy projde)
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+IP_SALT=lokalni-nahodny-retezec
+# Volitelné: Google Maps API klíč (Embed + Street View Static API)
+GOOGLE_MAPS_KEY=

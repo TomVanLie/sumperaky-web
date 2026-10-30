@@ -1,0 +1,31 @@
+{
+  "name": "sumperaky-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "predev": "npm run vendor",
+    "predeploy": "npm run vendor",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply sumperaky --local",
+    "db:migrate:remote": "wrangler d1 migrations apply sumperaky --remote",
+    "db:seed:local": "wrangler d1 execute sumperaky --local --file=scripts/seed-dev.sql"
+  },
+  "dependencies": {
+    "hono": "^4.13.14",
+    "jose": "^6.2.14"
+  },
+  "devDependencies": {
+    "maplibre-gl": "^6.16.0",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.156.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "workerd@1.20261023.1": true
+  }
+}

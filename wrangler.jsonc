@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sumperaky",
+  "main": "src/index.tsx",
+  "compatibility_date": "2026-10-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Statické soubory (CSS, JS, ikony). Worker běží jen pro cesty, které tu nejsou.
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sumperaky",
+      "database_id": "98dafc86-ede6-44ea-8541-c2f5f64c4735",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [{ "binding": "PHOTOS", "bucket_name": "sumperaky-photos" }],
+
+  "vars": {
+    "SITE_URL": "https://sumperaky.cz",
+    // Veřejný site key Turnstile. Lokálně se místo něj použije testovací klíč (viz src/index.tsx).
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFsaaW41otM1EcKz",
+    // Cloudflare Access pro /admin. Doplň po nastavení Access aplikace.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  },
+
+  // Tajemství (nastav přes `wrangler secret put`):
+  //   TURNSTILE_SECRET, IP_SALT, GOOGLE_MAPS_KEY (volitelné)
+
+  "routes": [
+    { "pattern": "sumperaky.cz", "custom_domain": true },
+    { "pattern": "www.sumperaky.cz", "custom_domain": true }
+  ]
+}
