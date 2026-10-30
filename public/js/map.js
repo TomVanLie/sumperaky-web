@@ -1,7 +1,5 @@
 import { SUMP, createMap, escapeHtml, getJson, maplibregl, stateColorExpr } from './common.js';
 
-// Poloha v URL (#zoom/lat/lng), aby šel výřez sdílet. Bez ní se mapa přiblíží na domy.
-const hadHash = /^#[\d.]+\/[\d.-]+\/[\d.-]+/.test(location.hash);
 const map = createMap('map', { hash: true });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 map.addControl(new maplibregl.GeolocateControl({ fitBoundsOptions: { maxZoom: 14 } }), 'top-right');
@@ -72,12 +70,6 @@ map.on('load', async () => {
   });
 
   refresh();
-
-  if (!hadHash && all.features.length) {
-    const bounds = new maplibregl.LngLatBounds();
-    for (const f of all.features) bounds.extend(f.geometry.coordinates);
-    map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 0 });
-  }
 
   map.on('click', 'clusters', async (e) => {
     const f = e.features[0];
