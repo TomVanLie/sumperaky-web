@@ -41,7 +41,7 @@ const formatValue = (field: string, v: unknown) => {
 admin.get('/', async (c) => {
   const db = c.env.DB;
   const skip = Number.parseInt(c.req.query('po') ?? '0', 10) || 0;
-  const [houses, photos, edits, reports, pendingCount] = await db.batch<Record<string, unknown>>([
+  const [houses, photos, edits, reports, pendingCount, comments] = await db.batch<Record<string, unknown>>([
     db.prepare(`SELECT * FROM houses WHERE status = 'pending' AND id > ? ORDER BY id LIMIT 1`).bind(skip),
     db.prepare(
       `SELECT p.*, h.status AS house_status, h.municipality, h.street, h.house_number, h.hide_number
@@ -56,6 +56,13 @@ admin.get('/', async (c) => {
          FROM reports r JOIN houses h ON h.id = r.house_id WHERE r.status = 'open' ORDER BY r.id LIMIT 50`,
     ),
     db.prepare(`SELECT count(*) AS n, sum(id <= ?) AS skipped FROM houses WHERE status = 'pending'`).bind(skip),
+    // Čekající komentáře (s odkazem) a posledních 30 zveřejněných pro kontrolu.
+    db.prepare(
+      `SELECT k.id, k.house_id, k.nickname, k.body, k.status, k.created_at, h.municipality, h.street, h.house_number, h.hide_number
+         FROM comments k JOIN houses h ON h.id = k.house_id
+        WHERE k.status = 'pending' OR k.id IN (SELECT id FROM comments WHERE status = 'visible' ORDER BY id DESC LIMIT 30)
+        ORDER BY k.status = 'pending' DESC, k.id DESC`,
+    ),
   ]);
   const current = (houses.results as unknown as House[])[0];
   const { n: pendingTotal, skipped } = pendingCount.results[0] as { n: number; skipped: number | null };
@@ -91,6 +98,16 @@ admin.get('/', async (c) => {
     house_status: string;
   } & House)[];
 
+  const commentRows = comments.results as unknown as ({
+    id: number;
+    house_id: number;
+    nickname: string | null;
+    body: string;
+    status: 'pending' | 'visible';
+    created_at: string;
+  } & House)[];
+  const pendingComments = commentRows.filter((k) => k.status === 'pending').length;
+
   return c.html(
     <Layout env={c.env} path="/admin" title="Moderace" map scripts={['/js/admin.js', '/js/house.js']}>
       <div class="page admin">
@@ -100,6 +117,7 @@ admin.get('/', async (c) => {
           <a href="#fotky">Fotky ({loosePhotos.length})</a>
           <a href="#upravy">Návrhy úprav ({editRows.length})</a>
           <a href="#nahlaseni">Nahlášení ({reportRows.length})</a>
+          <a href="#komentare">Komentáře ({pendingComments})</a>
         </nav>
 
         <section id="domy">
@@ -274,6 +292,27 @@ admin.get('/', async (c) => {
             </article>
           ))}
         </section>
+
+        <section id="komentare">
+          <h2>Komentáře</h2>
+          <p class="muted small">Komentáře bez odkazu se zveřejní hned. Nahoře čekají ty s odkazem, pod nimi posledních 30 zveřejněných.</p>
+          {commentRows.length === 0 && <p class="muted">Žádné komentáře.</p>}
+          {commentRows.map((k) => (
+            <article class={`mod-item${k.status === 'pending' ? ' pending' : ''}`}>
+              <header>
+                <strong>{k.nickname ?? 'Anonym'}</strong> ·{' '}
+                <a href={`/dum/${k.house_id}#komentar-${k.id}`}>#{k.house_id} {addressLine(k)}</a>{' '}
+                <span class="muted">{formatDate(k.created_at)}</span>
+                {k.status === 'pending' && <span class="tag">čeká (odkaz)</span>}
+              </header>
+              <p class="comment-body">{k.body}</p>
+              <div class="actions">
+                {k.status === 'pending' && <Action action={`/admin/comments/${k.id}/approve`} label="Zveřejnit" kind="btn-primary" />}
+                <Action action={`/admin/comments/${k.id}/hide`} label="Skrýt" kind="btn-danger" />
+              </div>
+            </article>
+          ))}
+        </section>
       </div>
     </Layout>,
   );
@@ -358,6 +397,16 @@ admin.post('/edits/:id/reject', async (c) => {
     .bind(idParam(c.req.param('id')))
     .run();
   return back(c, 'upravy');
+});
+
+admin.post('/comments/:id/approve', async (c) => {
+  await c.env.DB.prepare(`UPDATE comments SET status = 'visible' WHERE id = ?`).bind(idParam(c.req.param('id'))).run();
+  return back(c, 'komentare');
+});
+
+admin.post('/comments/:id/hide', async (c) => {
+  await c.env.DB.prepare(`UPDATE comments SET status = 'hidden' WHERE id = ?`).bind(idParam(c.req.param('id'))).run();
+  return back(c, 'komentare');
 });
 
 admin.post('/reports/:id/resolve', async (c) => {

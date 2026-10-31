@@ -11,6 +11,21 @@ export const sha256 = async (input: string) => {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 };
 
+// Otisk zařízení: hash IP adresy se solí, IP samotnou neukládáme.
+export const clientHash = (ip: string | undefined, salt: string) => sha256(`${ip ?? 'unknown'}|${salt}`);
+
+// Víceřádkový text od veřejnosti: bez řídicích a neviditelných znaků, nejvýš jeden prázdný řádek za sebou.
+export const plainText = (v: unknown): string =>
+  typeof v !== 'string'
+    ? ''
+    : v
+        .normalize('NFC')
+        .replace(/\r\n?/g, '\n')
+        .replace(/(?!\n)[\p{Cc}\p{Cf}]/gu, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
 export const str = (v: unknown, max = 500): string | null => {
   if (typeof v !== 'string') return null;
   const t = v.trim();

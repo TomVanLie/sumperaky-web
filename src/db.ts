@@ -99,8 +99,29 @@ export const getRevisions = async (db: D1Database, houseId: number) => {
   return results;
 };
 
-export const countConfirmations = async (db: D1Database, houseId: number) =>
-  (await db.prepare('SELECT count(*) AS n FROM confirmations WHERE house_id = ?').bind(houseId).first<number>('n')) ?? 0;
+export type Votes = { yes: number; no: number; mine: 0 | 1 | null };
+
+export const getVotes = async (db: D1Database, houseId: number, voterHash: string): Promise<Votes> => {
+  const row = await db
+    .prepare(
+      `SELECT coalesce(sum(vote = 1), 0) AS yes, coalesce(sum(vote = 0), 0) AS no,
+              (SELECT vote FROM votes WHERE house_id = ?1 AND voter_hash = ?2) AS mine
+         FROM votes WHERE house_id = ?1`,
+    )
+    .bind(houseId, voterHash)
+    .first<Votes>();
+  return row ?? { yes: 0, no: 0, mine: null };
+};
+
+export type Comment = { id: number; nickname: string | null; body: string; created_at: string };
+
+export const getComments = async (db: D1Database, houseId: number) => {
+  const { results } = await db
+    .prepare(`SELECT id, nickname, body, created_at FROM comments WHERE house_id = ? AND status = 'visible' ORDER BY id LIMIT 300`)
+    .bind(houseId)
+    .all<Comment>();
+  return results;
+};
 
 export const addRevision = (db: D1Database, houseId: number, summary: string, changes?: unknown) =>
   db
@@ -170,7 +191,9 @@ export const recentSubmissions = async (db: D1Database, hash: string) =>
       `SELECT (SELECT count(*) FROM houses WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour'))
             + (SELECT count(*) FROM photos WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour'))
             + (SELECT count(*) FROM edit_suggestions WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour'))
-            + (SELECT count(*) FROM reports WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour')) AS n`,
+            + (SELECT count(*) FROM reports WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour'))
+            + (SELECT count(*) FROM comments WHERE submitter_hash = ?1 AND created_at > datetime('now', '-1 hour'))
+            + (SELECT count(*) FROM votes WHERE voter_hash = ?1 AND updated_at > datetime('now', '-1 hour')) / 4 AS n`,
     )
     .bind(hash)
     .first<number>('n')) ?? 0;

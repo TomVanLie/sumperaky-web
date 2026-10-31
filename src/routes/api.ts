@@ -5,6 +5,7 @@ import {
   addressLine,
   getHouse,
   getModifications,
+  getVotes,
   housesNear,
   insertHouse,
   mapPoints,
@@ -15,10 +16,14 @@ import { parsePhotos, storePhotos } from '../photos';
 import { reversePlace, searchPlaces } from '../lib/geocode';
 import { panoMeta } from '../lib/streetview';
 import { verifyTurnstile } from '../lib/turnstile';
-import { distance, num, sha256, str } from '../lib/util';
+import { clientHash, distance, num, plainText, str } from '../lib/util';
 
 const MAX_WRITES_PER_HOUR = 30;
 const DUPLICATE_RADIUS_M = 40;
+const COMMENT_MAX = 1000;
+const NICKNAME_MAX = 40;
+// Odkazy v komentářích (i bez http) posíláme moderátorovi, typicky jde o spam.
+const LINK_RE = /https?:\/\/|www\.|\b[a-z0-9-]{2,}\.(cz|sk|com|net|org|eu|info|io|ru|xyz|top|shop)\b/i;
 
 export const api = new Hono<AppEnv>();
 
@@ -31,7 +36,7 @@ const guardWrite: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!(await verifyTurnstile(c.env.TURNSTILE_SECRET, form['cf-turnstile-response'], ip))) {
     return fail('Ověření proti spamu selhalo. Obnov stránku a zkus to znovu.', 403);
   }
-  const hash = await sha256(`${ip ?? 'unknown'}|${c.env.IP_SALT}`);
+  const hash = await clientHash(ip, c.env.IP_SALT);
   if ((await recentSubmissions(c.env.DB, hash)) >= MAX_WRITES_PER_HOUR) {
     return fail('Příliš mnoho příspěvků za krátkou dobu. Zkus to prosím později.', 429);
   }
@@ -154,22 +159,54 @@ api.post('/houses/:id/photos', guardWrite, async (c) => {
   return c.json({ ok: true, message: 'Díky! Fotky se zobrazí po schválení moderátorem.' });
 });
 
-api.post('/houses/:id/confirm', guardWrite, async (c) => {
+api.post('/houses/:id/vote', guardWrite, async (c) => {
   const id = houseId(c.req.param('id'));
   const house = id && (await getHouse(c.env.DB, id));
   if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
 
-  const res = await c.env.DB.prepare('INSERT OR IGNORE INTO confirmations (house_id, voter_hash) VALUES (?, ?)')
-    .bind(house.id, c.get('clientHash'))
+  const form = await c.req.parseBody();
+  if (form.vote !== 'yes' && form.vote !== 'no') return fail('Vyber Ano, nebo Ne.');
+  const vote = form.vote === 'yes' ? 1 : 0;
+  const hash = c.get('clientHash');
+  await c.env.DB.prepare(
+    `INSERT INTO votes (house_id, voter_hash, vote) VALUES (?, ?, ?)
+       ON CONFLICT (house_id, voter_hash) DO UPDATE SET vote = excluded.vote, updated_at = datetime('now')`,
+  )
+    .bind(house.id, hash, vote)
     .run();
-  const count = await c.env.DB.prepare('SELECT count(*) AS n FROM confirmations WHERE house_id = ?')
-    .bind(house.id)
-    .first<number>('n');
-  return c.json({
-    ok: true,
-    count,
-    message: res.meta.changes ? 'Díky za potvrzení!' : 'Tenhle dům už jsi potvrdil(a).',
-  });
+  return c.json({ ok: true, votes: await getVotes(c.env.DB, house.id, hash), message: 'Díky, hlas je započítaný.' });
+});
+
+api.post('/houses/:id/comments', guardWrite, async (c) => {
+  const id = houseId(c.req.param('id'));
+  const house = id && (await getHouse(c.env.DB, id));
+  if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
+
+  const form = await c.req.parseBody();
+  // Past na roboty: pole je skryté, člověk ho nevyplní.
+  if (str(form.website)) return fail('Komentář se nepodařilo uložit.');
+  const body = plainText(form.body);
+  const nickname = plainText(form.nickname).replace(/\s+/g, ' ') || null;
+  if (body.length < 3) return fail('Napiš alespoň pár slov.');
+  if (body.length > COMMENT_MAX) return fail(`Komentář může mít nejvýš ${COMMENT_MAX} znaků.`);
+  if (nickname && nickname.length > NICKNAME_MAX) return fail(`Přezdívka může mít nejvýš ${NICKNAME_MAX} znaků.`);
+
+  const hash = c.get('clientHash');
+  const duplicate = await c.env.DB.prepare('SELECT 1 FROM comments WHERE house_id = ? AND submitter_hash = ? AND body = ?')
+    .bind(house.id, hash, body)
+    .first();
+  if (duplicate) return fail('Stejný komentář už tu od tebe je.');
+
+  const status = LINK_RE.test(body) || (nickname && LINK_RE.test(nickname)) ? 'pending' : 'visible';
+  const row = await c.env.DB.prepare(
+    'INSERT INTO comments (house_id, nickname, body, status, submitter_hash) VALUES (?, ?, ?, ?, ?) RETURNING id, nickname, body, created_at',
+  )
+    .bind(house.id, nickname, body, status, hash)
+    .first();
+  if (status === 'pending') {
+    return c.json({ ok: true, message: 'Díky! Komentář obsahuje odkaz, proto se zobrazí až po kontrole moderátorem.' });
+  }
+  return c.json({ ok: true, comment: row, message: 'Komentář je zveřejněný.' });
 });
 
 api.post('/houses/:id/report', guardWrite, async (c) => {

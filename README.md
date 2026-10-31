@@ -5,7 +5,7 @@ Komunitní mapa šumperáků v Česku a na Slovensku. Běží na Cloudflare Work
 ## Technologie
 
 - **Cloudflare Workers + Hono**: server-side rendering stránek (JSX) a API
-- **D1**: domy, úpravy, fotky (metadata), návrhy úprav, nahlášení, historie
+- **D1**: domy, úpravy, fotky (metadata), návrhy úprav, nahlášení, historie, hlasy „je to šumperák?“, komentáře
 - **R2**: fotky (v prohlížeči se zmenší na max. 2000 px a odstraní se z nich EXIF/GPS)
 - **Turnstile**: ochrana všech formulářů proti spamu
 - **Heslo (HTTP Basic)**: přihlášení do moderace `/admin`, volitelně Cloudflare Access
@@ -52,6 +52,10 @@ Panoramata jsou z [Mapy.com](https://developer.mapy.com) (`MAPY_API_KEY`). Tarif
 Panoramata pokrývají jen Česko. U ostatních domů zůstávají odkazy na Mapy.cz a Google Street View. Kód umí volitelně i Google (`GOOGLE_MAPS_KEY`), ten ale vyžaduje billing.
 
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.
+
+## Hlasování a komentáře
+
+U každého domu jde anonymně hlasovat, jestli je to šumperák (jeden hlas na zařízení, jde změnit). Komentáře jsou anonymní, do 1000 znaků, chrání je Turnstile, past na roboty a limit zápisů za hodinu. Text se vždy vypisuje jako prostý text (žádné HTML). Komentář s odkazem čeká na schválení v `/admin#komentare`, ostatní se zveřejní hned a moderátor je může skrýt.
 
 ## Struktura
 

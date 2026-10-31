@@ -3,15 +3,18 @@ import { DESIGNS, FACADE_COLORS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOF
 import type { AppEnv } from '../env';
 import {
   addressLine,
-  countConfirmations,
+  getComments,
   getHouse,
   getModifications,
   getPhotos,
   getRevisions,
+  getVotes,
   type House,
+  type Comment,
+  type Votes,
 } from '../db';
 import { FIELD_LABELS } from '../input';
-import { formatDate } from '../lib/util';
+import { clientHash, formatDate } from '../lib/util';
 import { FacadeSwatch, FacadeSwatches, HouseCard, ModList, StateBadge, StreetView, photoUrl, type CardHouse } from '../views/components';
 import { Layout, Turnstile } from '../views/layout';
 
@@ -104,11 +107,13 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
   const house = await getHouse(c.env.DB, Number(c.req.param('id')));
   if (!house || house.status !== 'approved') return c.html(notFound(c), 404);
 
-  const [mods, photos, revisions, confirmations] = await Promise.all([
+  const voter = await clientHash(c.req.header('CF-Connecting-IP'), c.env.IP_SALT);
+  const [mods, photos, revisions, votes, comments] = await Promise.all([
     getModifications(c.env.DB, house.id),
     getPhotos(c.env.DB, house.id),
     getRevisions(c.env.DB, house.id),
-    countConfirmations(c.env.DB, house.id),
+    getVotes(c.env.DB, house.id, voter),
+    getComments(c.env.DB, house.id),
   ]);
   const before = photos.find((p) => p.phase === 'before');
   const after = [...photos].reverse().find((p) => p.phase === 'after' || p.phase === 'current');
@@ -174,6 +179,8 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
                 </div>
               </section>
             )}
+
+            <Comments houseId={house.id} comments={comments} siteKey={siteKey} />
           </div>
 
           <aside>
@@ -226,13 +233,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
 
             <div id="mini-map" class="mini-map"></div>
 
-            <form class="ajax confirm" action={`/api/houses/${house.id}/confirm`} method="post">
-              <Turnstile siteKey={siteKey} />
-              <button class="btn" type="submit">
-                👍 Ano, je to šumperák <span class="count">{confirmations}</span>
-              </button>
-              <p class="form-msg" role="status"></p>
-            </form>
+            <VoteBox houseId={house.id} votes={votes} siteKey={siteKey} />
 
             <details class="panel">
               <summary>Přidat fotky</summary>
@@ -305,6 +306,77 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
     </Layout>,
   );
 });
+
+const people = (n: number) => `${n} ${n === 1 ? 'člověk' : n >= 2 && n <= 4 ? 'lidé' : 'lidí'}`;
+
+// Hlasování "je to šumperák?". Po rekonstrukci bývá původní tvar k nepoznání, proto rozhoduje komunita.
+const VoteBox = ({ houseId, votes, siteKey }: { houseId: number; votes: Votes; siteKey: string }) => {
+  const total = votes.yes + votes.no;
+  const share = total ? Math.round((votes.yes / total) * 100) : 0;
+  return (
+    <section class="vote" id="hlasovani" data-mine={votes.mine ?? ''}>
+      <h3>Je to šumperák?</h3>
+      <div class="vote-bar" role="img" aria-label={`Ano ${share} %, ne ${100 - share} %`} hidden={!total}>
+        <span class="vote-yes" style={`width:${share}%`}></span>
+      </div>
+      <p class="vote-summary muted small">
+        {total ? `Ano si myslí ${people(votes.yes)}, ne ${people(votes.no)}.` : 'Zatím nikdo nehlasoval.'}
+      </p>
+      <form class="ajax vote-form" action={`/api/houses/${houseId}/vote`} method="post">
+        <Turnstile siteKey={siteKey} />
+        <div class="vote-buttons">
+          <button class="btn" type="submit" name="vote" value="yes" aria-pressed={votes.mine === 1 ? 'true' : 'false'}>
+            👍 Ano
+          </button>
+          <button class="btn" type="submit" name="vote" value="no" aria-pressed={votes.mine === 0 ? 'true' : 'false'}>
+            👎 Ne
+          </button>
+        </div>
+        <p class="form-msg" role="status"></p>
+      </form>
+    </section>
+  );
+};
+
+const Comments = ({ houseId, comments, siteKey }: { houseId: number; comments: Comment[]; siteKey: string }) => (
+  <section class="comments" id="komentare">
+    <h2>Komentáře {comments.length > 0 && <span class="muted">({comments.length})</span>}</h2>
+    <ol class="comment-list">
+      {comments.map((k) => (
+        <li id={`komentar-${k.id}`}>
+          <header>
+            <strong>{k.nickname ?? 'Anonym'}</strong> <time class="muted">{formatDate(k.created_at)}</time>
+          </header>
+          <p>{k.body}</p>
+        </li>
+      ))}
+    </ol>
+    {comments.length === 0 && <p class="muted comment-empty">Zatím bez komentářů. Víš o domě něco víc?</p>}
+    <form class="ajax comment-form" action={`/api/houses/${houseId}/comments`} method="post">
+      <label>
+        Komentář
+        <textarea name="body" rows={3} minlength={3} maxlength={1000} required></textarea>
+        <span class="muted small char-count" data-max="1000"></span>
+      </label>
+      <label>
+        Přezdívka (nepovinná)
+        <input name="nickname" maxlength={40} autocomplete="nickname" />
+      </label>
+      <label class="hp" aria-hidden="true">
+        Nevyplňovat
+        <input name="website" tabindex={-1} autocomplete="off" />
+      </label>
+      <p class="muted small">
+        Komentáře jsou anonymní. Odkazy se zobrazí až po kontrole moderátorem. Nepiš osobní údaje o majitelích.
+      </p>
+      <Turnstile siteKey={siteKey} />
+      <button class="btn btn-primary" type="submit">
+        Přidat komentář
+      </button>
+      <p class="form-msg" role="status"></p>
+    </form>
+  </section>
+);
 
 const changedFields = (json: string) => {
   try {
@@ -682,16 +754,133 @@ pages.get('/promeny', async (c) => {
   );
 });
 
+// ---------- Výpis domů podle filtru (proklik ze statistik) ----------
+
+const VOTE_GROUPS = {
+  ano: { label: 'Spíš je šumperák', sql: 'yes_votes > no_votes' },
+  nerozhodnuto: { label: 'Nerozhodnuto', sql: 'yes_votes = no_votes AND yes_votes > 0' },
+  ne: { label: 'Spíš není šumperák', sql: 'no_votes > yes_votes' },
+  bez: { label: 'Bez hlasů', sql: 'yes_votes + no_votes = 0' },
+} as const;
+const NO_REGION = 'neuvedeno';
+const PAGE_SIZE = 48;
+
+type Filter = { param: string; value: string; label: string; where: string; args: unknown[] };
+
+// Z parametrů URL sestaví podmínky. Neznámé hodnoty se ignorují, do SQL jdou jen jako parametry.
+const listFilters = (q: (name: string) => string | undefined): Filter[] => {
+  const out: Filter[] = [];
+  const stav = q('stav');
+  if (isKey(STATES, stav)) out.push({ param: 'stav', value: stav, label: STATES[stav].label, where: 'h.state = ?', args: [stav] });
+  const navrh = q('navrh');
+  if (isKey(DESIGNS, navrh)) out.push({ param: 'navrh', value: navrh, label: DESIGNS[navrh], where: 'h.design = ?', args: [navrh] });
+  const barva = q('barva');
+  if (isKey(FACADE_COLORS, barva))
+    out.push({ param: 'barva', value: barva, label: `Fasáda: ${FACADE_COLORS[barva].label.toLowerCase()}`, where: 'h.facade_color = ?', args: [barva] });
+  const uprava = q('uprava');
+  if (isKey(MODIFICATIONS, uprava))
+    out.push({
+      param: 'uprava',
+      value: uprava,
+      label: MODIFICATIONS[uprava],
+      where: 'EXISTS (SELECT 1 FROM house_modifications m WHERE m.house_id = h.id AND m.modification = ?)',
+      args: [uprava],
+    });
+  const kraj = q('kraj')?.slice(0, 100);
+  if (kraj === NO_REGION) out.push({ param: 'kraj', value: kraj, label: 'Kraj neuveden', where: 'h.region IS NULL', args: [] });
+  else if (kraj) out.push({ param: 'kraj', value: kraj, label: kraj, where: 'h.region = ?', args: [kraj] });
+  const rok = q('rekonstrukce');
+  const from = rok && /^\d{4}$/.test(rok) ? Number(rok) : null;
+  if (from)
+    out.push({ param: 'rekonstrukce', value: String(from), label: `Rekonstrukce ${from}–${from + 4}`, where: 'h.year_renovated BETWEEN ? AND ?', args: [from, from + 4] });
+  const hlasy = q('hlasovani');
+  if (isKey(VOTE_GROUPS, hlasy)) out.push({ param: 'hlasovani', value: hlasy, label: VOTE_GROUPS[hlasy].label, where: VOTE_GROUPS[hlasy].sql, args: [] });
+  return out;
+};
+
+const housesWord = (n: number) => (n === 1 ? 'dům' : n >= 2 && n <= 4 ? 'domy' : 'domů');
+
+pages.get('/domy', async (c) => {
+  const filters = listFilters((name) => c.req.query(name));
+  const page = Math.max(1, Number.parseInt(c.req.query('strana') ?? '1', 10) || 1);
+  const values = filters.flatMap((f) => f.args);
+  const where = ["h.status = 'approved'", ...filters.map((f) => f.where)].join(' AND ');
+  const base = `SELECT * FROM (
+      SELECT h.*, (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 1) AS yes_votes,
+                  (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 0) AS no_votes
+        FROM houses h WHERE h.status = 'approved') h WHERE ${where}`;
+
+  const [list, total] = await c.env.DB.batch<Record<string, unknown>>([
+    c.env.DB.prepare(
+      `SELECT h.id, h.lat, h.lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+              (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
+                 ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
+         FROM (${base}) h ORDER BY h.municipality, h.street, h.house_number LIMIT ? OFFSET ?`,
+    ).bind(...values, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+    c.env.DB.prepare(`SELECT count(*) AS n FROM (${base})`).bind(...values),
+  ]);
+  const houses = list.results as unknown as (CardHouse & { lat: number; lng: number })[];
+  const count = (total.results[0] as { n: number }).n;
+  const pages_ = Math.ceil(count / PAGE_SIZE);
+
+  const query = (fs: Filter[], extra: Record<string, string> = {}) => {
+    const params = new URLSearchParams([...fs.map((f) => [f.param, f.value]), ...Object.entries(extra)]);
+    return `/domy${params.size ? `?${params}` : ''}`;
+  };
+  const title = filters.length ? `Šumperáky: ${filters.map((f) => f.label).join(', ')}` : 'Všechny šumperáky';
+
+  return c.html(
+    <Layout env={c.env} path={query(filters)} title={title} description={`${title}. Seznam domů s fotkami a pohledem z ulice.`}>
+      <div class="page">
+        <p class="crumbs">
+          <a href="/statistiky">Statistiky</a> › Výpis
+        </p>
+        <h1>{title}</h1>
+        {filters.length > 0 && (
+          <p class="filter-chips">
+            {filters.map((f) => (
+              <a class="chip-link" href={query(filters.filter((o) => o !== f))} title="Zrušit filtr">
+                {f.label} <span aria-hidden="true">×</span>
+              </a>
+            ))}
+          </p>
+        )}
+        <p class="lead">
+          {count} {housesWord(count)}
+          {pages_ > 1 && `, strana ${page} z ${pages_}`}.
+        </p>
+        {count === 0 && (
+          <p>
+            Nic tu není. <a href="/statistiky">Zpět na statistiky</a>
+          </p>
+        )}
+        <div class="cards">
+          {houses.map((h) => (
+            <HouseCard h={h} keys={c.env} />
+          ))}
+        </div>
+        {pages_ > 1 && (
+          <nav class="pager">
+            {page > 1 && <a class="btn" href={query(filters, page > 2 ? { strana: String(page - 1) } : {})}>‹ Předchozí</a>}
+            {page < pages_ && <a class="btn" href={query(filters, { strana: String(page + 1) })}>Další ›</a>}
+          </nav>
+        )}
+      </div>
+    </Layout>,
+  );
+});
+
 // ---------- Statistiky ----------
 
 pages.get('/statistiky', async (c) => {
   const db = c.env.DB;
-  const [byState, byDesign, byRegion, byMod, byYear, byColor, totals] = await db.batch<Record<string, unknown>>([
+  const withVotes = `SELECT h.*, (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 1) AS yes_votes,
+                            (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 0) AS no_votes
+                       FROM houses h WHERE h.status = 'approved'`;
+  const [byState, byDesign, byRegion, byMod, byYear, byColor, byVote, disputed, totals] = await db.batch<Record<string, unknown>>([
     db.prepare(`SELECT state AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY state ORDER BY n DESC`),
     db.prepare(`SELECT design AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY design ORDER BY n DESC`),
-    db.prepare(
-      `SELECT coalesce(region, 'Neuvedeno') AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY k ORDER BY n DESC`,
-    ),
+    db.prepare(`SELECT region AS k, count(*) AS n FROM houses WHERE status = 'approved' GROUP BY k ORDER BY n DESC`),
     db.prepare(
       `SELECT m.modification AS k, count(*) AS n FROM house_modifications m JOIN houses h ON h.id = m.house_id
         WHERE h.status = 'approved' GROUP BY k ORDER BY n DESC`,
@@ -705,12 +894,27 @@ pages.get('/statistiky', async (c) => {
         WHERE status = 'approved' AND facade_color IS NOT NULL GROUP BY k ORDER BY n DESC`,
     ),
     db.prepare(
+      `SELECT CASE WHEN yes_votes > no_votes THEN 'ano' WHEN no_votes > yes_votes THEN 'ne'
+                   WHEN yes_votes > 0 THEN 'nerozhodnuto' ELSE 'bez' END AS k, count(*) AS n
+         FROM (${withVotes}) GROUP BY k`,
+    ),
+    // Domy, o kterých lidé nejvíc pochybují.
+    db.prepare(
+      `SELECT id, street, house_number, hide_number, municipality, yes_votes, no_votes FROM (${withVotes})
+        WHERE no_votes > 0 ORDER BY no_votes * 1.0 / (yes_votes + no_votes) DESC, no_votes DESC LIMIT 10`,
+    ),
+    db.prepare(
       `SELECT count(*) AS houses, (SELECT count(*) FROM photos WHERE status = 'approved') AS photos,
+              (SELECT count(*) FROM votes) AS votes, (SELECT count(*) FROM comments WHERE status = 'visible') AS comments,
               count(DISTINCT municipality_slug) AS municipalities FROM houses WHERE status = 'approved'`,
     ),
   ]);
-  const t = totals.results[0] as { houses: number; photos: number; municipalities: number };
-  const rows = (r: D1Result<Record<string, unknown>>) => r.results as { k: string | number; n: number }[];
+  const t = totals.results[0] as { houses: number; photos: number; votes: number; comments: number; municipalities: number };
+  const rows = (r: D1Result<Record<string, unknown>>) => r.results as { k: string | number | null; n: number }[];
+  const link = (param: string, value: string | number | null) => `/domy?${new URLSearchParams({ [param]: String(value) })}`;
+  const voteRows = rows(byVote);
+  const disputedRows = disputed.results as unknown as (House & { yes_votes: number; no_votes: number })[];
+  const voteColors: Record<string, string> = { ano: '#2f9e5b', nerozhodnuto: '#d9a52b', ne: '#c0392b', bez: '#b0b7c3' };
 
   return c.html(
     <Layout env={c.env} path="/statistiky" title="Statistiky šumperáků">
@@ -729,7 +933,16 @@ pages.get('/statistiky', async (c) => {
             <span class="tile-value">{t.photos}</span>
             <span class="tile-label">fotek</span>
           </div>
+          <div class="tile">
+            <span class="tile-value">{t.votes}</span>
+            <span class="tile-label">hlasů „je to šumperák?“</span>
+          </div>
+          <div class="tile">
+            <span class="tile-value">{t.comments}</span>
+            <span class="tile-label">komentářů</span>
+          </div>
         </div>
+        <p class="muted">Klikni na řádek a zobrazí se seznam domů.</p>
         <div class="columns">
           <Bars
             title="Podle stavu"
@@ -737,49 +950,100 @@ pages.get('/statistiky', async (c) => {
               label: STATES[r.k as keyof typeof STATES]?.label ?? String(r.k),
               n: r.n,
               color: STATES[r.k as keyof typeof STATES]?.color,
+              href: link('stav', r.k),
             }))}
           />
           <Bars
             title="Podle návrhu"
-            rows={rows(byDesign).map((r) => ({ label: DESIGNS[r.k as keyof typeof DESIGNS] ?? String(r.k), n: r.n }))}
+            rows={rows(byDesign).map((r) => ({
+              label: DESIGNS[r.k as keyof typeof DESIGNS] ?? String(r.k),
+              n: r.n,
+              href: link('navrh', r.k),
+            }))}
+          />
+          <Bars
+            title="Je to šumperák? Názor komunity"
+            rows={Object.entries(VOTE_GROUPS).map(([k, g]) => ({
+              label: g.label,
+              n: voteRows.find((r) => r.k === k)?.n ?? 0,
+              color: voteColors[k],
+              href: link('hlasovani', k),
+            }))}
           />
           <Bars
             title="Barvy fasád"
             rows={rows(byColor).map((r) => {
               const f = FACADE_COLORS[r.k as keyof typeof FACADE_COLORS];
-              return { label: f?.label ?? String(r.k), n: r.n, color: f?.hex };
+              return { label: f?.label ?? String(r.k), n: r.n, color: f?.hex, href: link('barva', r.k) };
             })}
           />
-          <Bars title="Podle kraje" rows={rows(byRegion).map((r) => ({ label: String(r.k), n: r.n }))} />
+          <Bars
+            title="Podle kraje"
+            rows={rows(byRegion).map((r) => ({
+              label: r.k === null ? 'Neuvedeno' : String(r.k),
+              n: r.n,
+              href: link('kraj', r.k ?? NO_REGION),
+            }))}
+          />
           <Bars
             title="Nejčastější úpravy"
-            rows={rows(byMod).map((r) => ({ label: MODIFICATIONS[r.k as keyof typeof MODIFICATIONS] ?? String(r.k), n: r.n }))}
+            rows={rows(byMod).map((r) => ({
+              label: MODIFICATIONS[r.k as keyof typeof MODIFICATIONS] ?? String(r.k),
+              n: r.n,
+              href: link('uprava', r.k),
+            }))}
           />
           <Bars
             title="Rekonstrukce podle let"
-            rows={rows(byYear).map((r) => ({ label: `${r.k}–${Number(r.k) + 4}`, n: r.n }))}
+            rows={rows(byYear).map((r) => ({ label: `${r.k}–${Number(r.k) + 4}`, n: r.n, href: link('rekonstrukce', r.k) }))}
           />
+          {disputedRows.length > 0 && (
+            <section class="bars">
+              <h2>Nejvíc sporné domy</h2>
+              <ol class="disputed">
+                {disputedRows.map((h) => (
+                  <li>
+                    <a href={`/dum/${h.id}#hlasovani`}>{addressLine(h) || h.municipality}</a>{' '}
+                    <span class="muted small">
+                      👍 {h.yes_votes} · 👎 {h.no_votes}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
         </div>
       </div>
     </Layout>,
   );
 });
 
-const Bars = ({ title, rows }: { title: string; rows: { label: string; n: number; color?: string }[] }) => {
+type BarRow = { label: string; n: number; color?: string; href?: string };
+
+const Bars = ({ title, rows }: { title: string; rows: BarRow[] }) => {
   const max = Math.max(1, ...rows.map((r) => r.n));
   return (
     <section class="bars">
       <h2>{title}</h2>
       {rows.length === 0 && <p class="muted">Zatím bez dat.</p>}
-      {rows.map((r) => (
-        <div class="bar-row">
-          <span class="bar-label">{r.label}</span>
-          <span class="bar-track">
-            <span class="bar" style={`width:${(r.n / max) * 100}%${r.color ? `;--c:${r.color}` : ''}`}></span>
-          </span>
-          <span class="bar-value">{r.n}</span>
-        </div>
-      ))}
+      {rows.map((r) => {
+        const inner = (
+          <>
+            <span class="bar-label">{r.label}</span>
+            <span class="bar-track">
+              <span class="bar" style={`width:${(r.n / max) * 100}%${r.color ? `;--c:${r.color}` : ''}`}></span>
+            </span>
+            <span class="bar-value">{r.n}</span>
+          </>
+        );
+        return r.href && r.n > 0 ? (
+          <a class="bar-row" href={r.href}>
+            {inner}
+          </a>
+        ) : (
+          <div class="bar-row">{inner}</div>
+        );
+      })}
     </section>
   );
 };
@@ -805,7 +1069,10 @@ pages.get('/o-projektu', (c) =>
         <ul>
           <li>Přidej šumperák, který znáš, ideálně s fotkou z ulice.</li>
           <li>Pokud jsi dům zrekonstruoval(a), nahraj fotky před a po. Inspiruješ ostatní.</li>
-          <li>U existujících domů potvrď, že jde opravdu o šumperák, nebo navrhni opravu údajů.</li>
+          <li>
+            U existujících domů hlasuj, jestli jde opravdu o šumperák. Po rekonstrukci se původní tvar často ztratí,
+            proto rozhoduje názor komunity. Můžeš taky přidat komentář nebo navrhnout opravu údajů.
+          </li>
         </ul>
         <h2>Data</h2>
         <p>
@@ -842,10 +1109,15 @@ pages.get('/soukromi', (c) =>
           Nevyžadujeme registraci. Kvůli ochraně proti spamu ukládáme k příspěvku jen jednosměrný otisk (hash) IP
           adresy, ze kterého nelze IP adresu zpětně zjistit. Kontakt v nahlášení je nepovinný a vidí ho jen moderátoři.
         </p>
+        <h2>Hlasování a komentáře</h2>
+        <p>
+          Hlasovat i komentovat jde anonymně. Stejný otisk zařízení slouží k tomu, aby každý mohl u domu hlasovat jen
+          jednou (hlas jde změnit). Komentáře s osobními údaji o majitelích nebo urážkami moderátor skryje.
+        </p>
         <h2>Pohled z ulice</h2>
         <p>
-          Snímky z ulice načítá tvůj prohlížeč přímo ze služby Google Street View, my je neukládáme. Platí pro ně{' '}
-          <a href="https://policies.google.com/privacy" rel="noopener">zásady ochrany soukromí Googlu</a>.
+          Snímky z ulice načítá tvůj prohlížeč přímo ze služby Mapy.com (Seznam.cz), my je neukládáme. Platí pro ně{' '}
+          <a href="https://o.seznam.cz/ochrana-udaju/" rel="noopener">zásady ochrany údajů Seznamu</a>.
         </p>
       </div>
     </Layout>,
