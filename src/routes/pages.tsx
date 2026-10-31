@@ -96,6 +96,15 @@ pages.get('/', async (c) => {
           </a>
         </aside>
         <div id="map" class="map"></div>
+        <aside id="results" class="results-panel" hidden aria-label="Domy v okolí">
+          <header>
+            <h2 id="results-title"></h2>
+            <button type="button" class="btn btn-sm" id="results-close" aria-label="Zavřít panel">
+              ✕
+            </button>
+          </header>
+          <ul id="results-list" class="results-list"></ul>
+        </aside>
       </div>
     </Layout>,
   );

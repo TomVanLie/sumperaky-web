@@ -132,19 +132,53 @@ fieldset.mods label { margin: 0.3rem 0; }
 /* ---------- Stránka s mapou ---------- */
 
 .map-layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - var(--header-h)); }
+.map-layout.with-results { grid-template-columns: 320px 1fr 380px; }
 .map-panel { padding: 1rem 1.25rem; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); }
 .map-panel h1 { font-size: 1.4rem; margin: 0.2rem 0 0.4rem; }
 .map-panel .lead { font-size: 0.95rem; }
 .filters fieldset label { margin: 0.25rem 0; }
-.map { width: 100%; height: 100%; }
+.map { width: 100%; height: 100%; min-width: 0; }
+
+/* Pravý panel s výpisem domů */
+.results-panel { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+.results-panel[hidden] { display: none; }
+.results-panel header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+.results-panel h2 { font-size: 1.05rem; margin: 0; }
+.results-list { list-style: none; margin: 0; padding: 0.5rem; overflow-y: auto; display: grid; gap: 0.5rem; align-content: start; }
+.result { display: grid; grid-template-columns: 120px 1fr; gap: 0.75rem; width: 100%; padding: 0.4rem; border: 1px solid transparent; border-radius: var(--radius); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.result:hover { background: #f3f5f9; }
+.selected .result { border-color: var(--brand); background: #eef2f7; }
+.result .thumb { aspect-ratio: 400 / 260; }
+.result-body { display: grid; gap: 0.25rem; align-content: start; font-size: 0.9rem; min-width: 0; }
+.result-body strong { overflow-wrap: anywhere; }
+.result-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+
+/* Náhled (fotka nebo panorama) se zástupným textem pod obrázkem */
+.thumb { position: relative; overflow: hidden; border-radius: 6px; background: #eef0f3; }
+.thumb img { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; object-fit: cover; }
+.thumb-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 0.8rem; }
+.swatch-inline { display: inline-flex; align-items: center; gap: 0.3rem; }
+.swatch-dot { width: 0.85rem; height: 0.85rem; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
+
 @media (max-width: 760px) {
-  .map-layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; }
+  .map-layout, .map-layout.with-results { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
   .map-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .map-panel .filters fieldset { display: grid; grid-template-columns: 1fr 1fr; }
   .map { height: 70vh; }
+  .results-panel { border-left: 0; border-top: 1px solid var(--line); }
 }
-.popup { display: grid; gap: 0.35rem; color: var(--ink); text-decoration: none; }
-.popup img { border-radius: 6px; aspect-ratio: 4 / 3; object-fit: cover; }
+
+/* Bublina na mapě */
+.maplibregl-popup-content { padding: 0.6rem; border-radius: var(--radius); }
+.popup { display: grid; gap: 0.4rem; justify-items: start; color: var(--ink); font-size: 0.88rem; }
+.popup-img { display: block; width: 100%; }
+.popup .thumb { aspect-ratio: 16 / 9; }
+.popup-title { font-weight: 700; font-size: 1rem; color: var(--ink); text-decoration: none; }
+.popup-title:hover { text-decoration: underline; }
+.popup-facts { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.6rem; margin: 0; }
+.popup-facts dt { color: var(--muted); }
+.popup-facts dd { margin: 0; }
+.popup-votes { color: var(--muted); font-size: 0.82rem; }
 .popup-more { color: var(--brand); font-weight: 600; }
 
 /* ---------- Obsahové stránky ---------- */

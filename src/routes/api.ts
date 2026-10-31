@@ -63,6 +63,12 @@ api.get('/houses.geojson', async (c) => {
       r: r.region ?? '',
       c: r.facade_color ?? '',
       d: r.design,
+      k: r.country,
+      yb: r.year_built ?? 0,
+      yr: r.year_renovated ?? 0,
+      v1: r.yes_votes,
+      v0: r.no_votes,
+      cc: r.comments,
     },
   }));
   return c.json({ type: 'FeatureCollection', features }, 200, { 'Cache-Control': 'public, max-age=60' });

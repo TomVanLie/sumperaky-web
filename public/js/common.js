@@ -68,10 +68,10 @@ export const streetViewLink = (lat, lng, heading) => {
 export const mapyLink = (lat, lng) => `https://mapy.cz/zakladni?x=${lng}&y=${lat}&z=19&source=coor&id=${lng}%2C${lat}`;
 
 // Panorama z Mapy.com natočené na zadaný bod (jen Česko).
-export const mapyPano = (lat, lng) =>
+export const mapyPano = (lat, lng, width = 1024, height = 640) =>
   `https://api.mapy.cz/v1/static/pano?${new URLSearchParams({
-    width: '1024',
-    height: '640',
+    width: String(width),
+    height: String(height),
     lon: String(lng),
     lat: String(lat),
     yaw: 'point',

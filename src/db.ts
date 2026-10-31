@@ -57,16 +57,24 @@ export const mapPoints = async (db: D1Database) => {
               (SELECT group_concat(modification) FROM house_modifications m WHERE m.house_id = h.id) AS mods,
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo,
-              h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color, h.design
+              h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color, h.design,
+              h.country, h.year_built, h.year_renovated,
+              (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 1) AS yes_votes,
+              (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 0) AS no_votes,
+              (SELECT count(*) FROM comments k WHERE k.house_id = h.id AND k.status = 'visible') AS comments
          FROM houses h WHERE h.status = 'approved'`,
     )
     .all<
       Pick<
         House,
-        'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region' | 'facade_color' | 'design'
+        | 'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region'
+        | 'facade_color' | 'design' | 'country' | 'year_built' | 'year_renovated'
       > & {
         mods: string | null;
         photo: string | null;
+        yes_votes: number;
+        no_votes: number;
+        comments: number;
       }
     >();
   return results;
