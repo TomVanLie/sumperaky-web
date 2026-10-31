@@ -11,7 +11,7 @@ import {
   mapPoints,
   recentSubmissions,
 } from '../db';
-import { diffHouse, parseHouseInput } from '../input';
+import { CAMERA_MAX_M, diffHouse, parseCamera, parseHouseInput } from '../input';
 import { parsePhotos, storePhotos } from '../photos';
 import { reversePlace, searchPlaces } from '../lib/geocode';
 import { panoMeta } from '../lib/streetview';
@@ -69,6 +69,7 @@ api.get('/houses.geojson', async (c) => {
       v1: r.yes_votes,
       v0: r.no_votes,
       cc: r.comments,
+      cam: r.cam_lat !== null && r.cam_lng !== null ? [r.cam_lng, r.cam_lat] : 0,
     },
   }));
   return c.json({ type: 'FeatureCollection', features }, 200, { 'Cache-Control': 'public, max-age=60' });
@@ -226,6 +227,27 @@ api.post('/houses/:id/report', guardWrite, async (c) => {
     .bind(house.id, form.kind, str(form.message, 2000), str(form.contact, 200), c.get('clientHash'))
     .run();
   return c.json({ ok: true, message: 'Díky, nahlášení jsme přijali a podíváme se na něj.' });
+});
+
+// Oprava pohledu z ulice (rohové domy). Jde k moderátorovi jako běžný návrh úprav.
+api.post('/houses/:id/camera', guardWrite, async (c) => {
+  const id = houseId(c.req.param('id'));
+  const house = id && (await getHouse(c.env.DB, id));
+  if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
+
+  const form = await c.req.parseBody();
+  const camera = parseCamera(form.cam_lat, form.cam_lng, house.lat, house.lng);
+  if (!camera) return fail(`Klikni v mapě na ulici nejvýš ${CAMERA_MAX_M} m od domu.`);
+
+  await c.env.DB.prepare('INSERT INTO edit_suggestions (house_id, payload, comment, submitter_hash) VALUES (?, ?, ?, ?)')
+    .bind(
+      house.id,
+      JSON.stringify({ cam_lat: { from: house.cam_lat, to: camera.lat }, cam_lng: { from: house.cam_lng, to: camera.lng } }),
+      'Oprava pohledu z ulice',
+      c.get('clientHash'),
+    )
+    .run();
+  return c.json({ ok: true, message: 'Díky! Nový pohled se ukáže po schválení moderátorem.' });
 });
 
 api.post('/houses/:id/edit', guardWrite, async (c) => {

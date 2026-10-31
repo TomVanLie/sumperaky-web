@@ -48,7 +48,7 @@ admin.get('/', async (c) => {
          FROM photos p JOIN houses h ON h.id = p.house_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 100`,
     ),
     db.prepare(
-      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number
+      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number, h.lat, h.lng, h.country, h.cam_lat, h.cam_lng
          FROM edit_suggestions e JOIN houses h ON h.id = e.house_id WHERE e.status = 'pending' ORDER BY e.id LIMIT 50`,
     ),
     db.prepare(
@@ -262,6 +262,19 @@ admin.get('/', async (c) => {
                   ))}
                 </table>
                 {e.comment && <p class="note">{e.comment}</p>}
+                {'cam_lat' in changes && (
+                  <div class="cam-compare">
+                    {[
+                      ['Teď', panoUrl(c.env, e, true)],
+                      ['Navrženo', panoUrl(c.env, { ...e, cam_lat: changes.cam_lat.to as number, cam_lng: changes.cam_lng?.to as number }, true)],
+                    ].map(([label, src]) => (
+                      <figure>
+                        {src && <img src={src} alt="" loading="lazy" />}
+                        <figcaption>{label}</figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
                 <div class="actions">
                   <Action action={`/admin/edits/${e.id}/apply`} label="Použít" kind="btn-primary" />
                   <Action action={`/admin/edits/${e.id}/reject`} label="Zamítnout" />

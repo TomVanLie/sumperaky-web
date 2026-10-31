@@ -167,6 +167,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
             ) : null}
 
             <StreetView h={house} keys={c.env} />
+            {c.env.MAPY_API_KEY && house.country !== 'sk' && <CameraFix house={house} siteKey={siteKey} />}
 
             {photos.length > 0 && (
               <section>
@@ -315,6 +316,28 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
     </Layout>,
   );
 });
+
+// Rohové domy bývají v panoramatu vidět z boční ulice. Tady jde zvolit místo, odkud se dívat (viz house.js).
+const CameraFix = ({ house, siteKey }: { house: House; siteKey: string }) => (
+  <details class="panel cam-fix" data-cam={house.cam_lat != null ? `${house.cam_lng},${house.cam_lat}` : ''}>
+    <summary>Dům je na snímku vidět z boku nebo z jiné ulice? Oprav pohled</summary>
+    <p class="muted small">Klikni v mapě na ulici před průčelím domu. Náhled se hned změní.</p>
+    <div class="cam-fix-map"></div>
+    <div class="sv-frame cam-fix-preview pano-missing">
+      <img alt="Náhled nového pohledu" />
+      <div class="sv-placeholder">Na tomhle místě panorama není. Klikni přímo na silnici.</div>
+    </div>
+    <form class="ajax" action={`/api/houses/${house.id}/camera`} method="post">
+      <input type="hidden" name="cam_lat" />
+      <input type="hidden" name="cam_lng" />
+      <Turnstile siteKey={siteKey} />
+      <button class="btn btn-primary" type="submit" disabled>
+        Navrhnout tenhle pohled
+      </button>
+      <p class="form-msg" role="status"></p>
+    </form>
+  </details>
+);
 
 const people = (n: number) => `${n} ${n === 1 ? 'člověk' : n >= 2 && n <= 4 ? 'lidé' : 'lidí'}`;
 
@@ -475,6 +498,8 @@ const EditForm = ({ house, mods, siteKey }: { house: House; mods: string[]; site
     <input type="hidden" name="lng" value={String(house.lng)} />
     <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
     <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
+    <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
+    <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
     <div class="row">
       <label>
         Ulice
@@ -532,11 +557,28 @@ pages.get('/pridat', (c) =>
           <input type="hidden" name="country" />
           <input type="hidden" name="district" />
           <input type="hidden" name="region" />
+          <input type="hidden" name="cam_lat" />
+          <input type="hidden" name="cam_lng" />
 
           <section id="picked" class="picked" hidden>
-            <div class="sv-frame picked-pano">
-              <img id="picked-pano" alt="Pohled z ulice" hidden />
-              <div class="sv-placeholder">U tohoto místa panorama z ulice není.</div>
+            <div class="picked-media">
+              <div class="sv-frame picked-pano">
+                <img id="picked-pano" alt="Pohled z ulice" hidden />
+                <div class="sv-placeholder" id="pano-missing-text">
+                  U tohoto místa panorama z ulice není.
+                </div>
+              </div>
+              <div class="cam-tools">
+                <button type="button" class="btn btn-sm" id="cam-pick">
+                  🔄 Dům je vidět z boku? Vyber ulici před průčelím
+                </button>
+                <button type="button" class="btn btn-sm" id="cam-reset" hidden>
+                  Zpět na automatický pohled
+                </button>
+                <p class="cam-hint small" id="cam-hint" hidden>
+                  👆 Klikni v mapě na ulici, ze které je vidět průčelí domu (nejvýš 150 m od domu).
+                </p>
+              </div>
             </div>
             <div class="picked-body">
               <h2 id="picked-address">Vybraný dům</h2>
@@ -676,7 +718,7 @@ pages.get('/obce', async (c) => {
   );
 });
 
-const cardsQuery = `SELECT h.id, h.lat, h.lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+const cardsQuery = `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
       (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
          ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
    FROM houses h`;
@@ -821,7 +863,7 @@ pages.get('/domy', async (c) => {
 
   const [list, total] = await c.env.DB.batch<Record<string, unknown>>([
     c.env.DB.prepare(
-      `SELECT h.id, h.lat, h.lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+      `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
          FROM (${base}) h ORDER BY h.municipality, h.street, h.house_number LIMIT ? OFFSET ?`,

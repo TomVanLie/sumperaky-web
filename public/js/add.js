@@ -114,16 +114,73 @@ const checkDuplicates = async (lat, lng) => {
 
 // Bez klíče Mapy.com panorama vůbec neukazujeme.
 if (!SUMP.mapyKey) {
-  pano.parentElement.remove();
+  pano.closest('.picked-media').hidden = true;
   picked.classList.add('no-pano');
 }
 
-const showPano = (lat, lng) => {
-  if (!SUMP.mapyKey) return;
+// ---------- Místo pohledu (rohové domy) ----------
+
+const camPick = document.getElementById('cam-pick');
+const camReset = document.getElementById('cam-reset');
+const camHint = document.getElementById('cam-hint');
+const missingText = document.getElementById('pano-missing-text');
+let pickingCamera = false;
+let camMarker;
+
+const camera = () => (f('cam_lat').value ? [Number(f('cam_lng').value), Number(f('cam_lat').value)] : null);
+
+const showPano = () => {
+  if (!SUMP.mapyKey || !f('lat').value) return;
   pano.parentElement.classList.remove('pano-missing');
   pano.hidden = false;
-  pano.src = mapyPano(lat, lng);
+  missingText.textContent = camera()
+    ? 'Na tomhle místě panorama není. Klikni v mapě přímo na silnici.'
+    : 'U tohoto místa panorama z ulice není.';
+  pano.src = mapyPano(Number(f('lat').value), Number(f('lng').value), 1024, 640, camera());
 };
+
+const setPicking = (on) => {
+  pickingCamera = on;
+  camHint.hidden = !on;
+  camPick.textContent = on ? 'Zrušit výběr ulice' : '🔄 Dům je vidět z boku? Vyber ulici před průčelím';
+  map.getCanvas().style.cursor = on ? 'crosshair' : '';
+  if (on) document.getElementById('add-map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
+const setCamera = (lngLat) => {
+  f('cam_lat').value = lngLat ? lngLat[1].toFixed(7) : '';
+  f('cam_lng').value = lngLat ? lngLat[0].toFixed(7) : '';
+  camReset.hidden = !lngLat;
+  if (lngLat) {
+    if (!camMarker) {
+      const icon = document.createElement('div');
+      icon.className = 'cam-marker';
+      icon.textContent = '👁';
+      icon.title = 'Odsud se díváme na dům';
+      camMarker = new maplibregl.Marker({ element: icon, draggable: true }).setLngLat(lngLat).addTo(map);
+      camMarker.on('dragend', () => {
+        const p = camMarker.getLngLat();
+        setCamera([p.lng, p.lat]);
+      });
+    } else {
+      camMarker.setLngLat(lngLat);
+    }
+  } else {
+    camMarker?.remove();
+    camMarker = null;
+  }
+  showPano();
+};
+
+camPick.addEventListener('click', () => setPicking(!pickingCamera));
+camReset.addEventListener('click', () => {
+  setPicking(false);
+  setCamera(null);
+});
+
+// Vzdálenost v metrech (stačí přibližně, kontroluje i server).
+const meters = ([lng1, lat1], [lng2, lat2]) =>
+  Math.hypot((lng2 - lng1) * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180)), lat2 - lat1) * 111320;
 
 pano.addEventListener('error', () => pano.parentElement.classList.add('pano-missing'));
 // Mapy.com posílá CORS hlavičky, díky tomu smíme číst barvy pixelů.
@@ -178,13 +235,26 @@ const setLocation = async (lat, lng, place) => {
   }
   picked.hidden = false;
   heading.textContent = place?.label ?? 'Hledám adresu…';
-  showPano(lat, lng);
+  // Nový dům, nové místo pohledu.
+  setPicking(false);
+  f('cam_lat').value = '';
+  setCamera(null);
   checkDuplicates(lat, lng);
   fillAddress(place ?? (await getJson(`/api/reverse?lat=${lat}&lng=${lng}`).catch(() => null)));
   picked.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
-map.on('click', (e) => setLocation(e.lngLat.lat, e.lngLat.lng));
+map.on('click', (e) => {
+  if (!pickingCamera) return setLocation(e.lngLat.lat, e.lngLat.lng);
+  const point = [e.lngLat.lng, e.lngLat.lat];
+  if (meters(point, [Number(f('lng').value), Number(f('lat').value)]) > 150) {
+    camHint.textContent = 'To je od domu moc daleko. Klikni na ulici přímo před domem (nejvýš 150 m).';
+    return;
+  }
+  setPicking(false);
+  setCamera(point);
+  picked.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
 
 const showResults = (places) => {
   results.hidden = !places.length;

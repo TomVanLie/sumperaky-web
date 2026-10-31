@@ -1,6 +1,13 @@
 import { bearing } from './util';
 
-type Pos = { lat: number; lng: number; sv_heading?: number | null; sv_pitch?: number | null };
+type Pos = {
+  lat: number;
+  lng: number;
+  sv_heading?: number | null;
+  sv_pitch?: number | null;
+  cam_lat?: number | null;
+  cam_lng?: number | null;
+};
 
 // Odkazy fungují vždy, bez API klíče (oficiální Google Maps URLs).
 export const streetViewLink = (h: Pos) => {
@@ -14,18 +21,26 @@ export const mapyLink = (h: Pos) =>
   `https://mapy.cz/zakladni?x=${h.lng}&y=${h.lat}&z=19&source=coor&id=${h.lng}%2C${h.lat}`;
 
 // Panorama z Mapy.com (jen Česko). yaw=point natočí kameru z nejbližšího panoramatu na dům.
-// Obrázky se podle podmínek nesmí ukládat, prohlížeč je načítá přímo.
-export const mapyPanoStatic = (key: string, h: Pos, width = 1024, height = 640) =>
-  `https://api.mapy.cz/v1/static/pano?${new URLSearchParams({
+// U rohových domů bývá nejbližší panorama v boční ulici. Pak se díváme ze zvoleného místa
+// (cam_lat/cam_lng) s natočením na dům. Obrázky se podle podmínek nesmí ukládat.
+export const mapyPanoStatic = (key: string, h: Pos, width = 1024, height = 640) => {
+  const cam = h.cam_lat != null && h.cam_lng != null ? { lat: h.cam_lat, lng: h.cam_lng } : null;
+  const p = new URLSearchParams({
     width: String(width),
     height: String(height),
-    lon: String(h.lng),
-    lat: String(h.lat),
-    yaw: 'point',
+    lon: String(cam?.lng ?? h.lng),
+    lat: String(cam?.lat ?? h.lat),
+    yaw: cam ? ((bearing(cam.lat, cam.lng, h.lat, h.lng) * Math.PI) / 180).toFixed(3) : 'point',
     fov: '1',
     lang: 'cs',
     apikey: key,
-  })}`;
+  });
+  if (cam) p.set('radius', String(CAMERA_RADIUS_M));
+  return `https://api.mapy.cz/v1/static/pano?${p}`;
+};
+
+// Jak daleko od zvoleného místa smí být panorama (aby natočení na dům sedělo).
+export const CAMERA_RADIUS_M = 25;
 
 // Statický náhled. Bez headingu Google sám natočí kameru z nejbližšího panoramatu na zadaný bod.
 export const streetViewStatic = (key: string, h: Pos, size = '640x400') => {

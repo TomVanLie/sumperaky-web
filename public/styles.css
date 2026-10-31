@@ -219,6 +219,9 @@ fieldset.mods label { margin: 0.3rem 0; }
 /* Past na roboty: pole mimo obrazovku. */
 .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .mod-item.pending { border-color: var(--accent); }
+.cam-compare { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.cam-compare figure { margin: 0; width: 320px; }
+.cam-compare img { aspect-ratio: 400 / 260; object-fit: cover; border-radius: 6px; background: #eef0f3; }
 .history { padding-left: 1.1rem; font-size: 0.9rem; }
 .history time { color: var(--muted); }
 
@@ -309,7 +312,13 @@ form.inline { display: inline; }
 .picked { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1.5rem; margin: 1.25rem 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .picked[hidden] { display: none; }
 .picked.no-pano { grid-template-columns: 1fr; max-width: 640px; }
-.picked-pano { align-self: start; }
+.picked-media { align-self: start; display: grid; gap: 0.5rem; }
+.picked-media[hidden] { display: none; }
+.cam-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.cam-hint { flex-basis: 100%; margin: 0; padding: 0.4rem 0.6rem; border-radius: 6px; background: #fff4e5; border: 1px solid var(--accent); }
+.cam-marker { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--brand); color: #fff; font-size: 16px; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
+.cam-fix-map { height: 260px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); margin: 0.5rem 0; }
+.cam-fix-preview { position: relative; aspect-ratio: 16 / 10; }
 .picked h2 { margin: 0 0 0.25rem; font-size: 1.3rem; }
 @media (max-width: 860px) { .picked { grid-template-columns: 1fr; } }
 .chips { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }

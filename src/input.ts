@@ -1,5 +1,8 @@
 import { BOUNDS, DESIGNS, FACADE_COLORS, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
-import { int, num, slugify, str, url } from './lib/util';
+import { distance, int, num, slugify, str, url } from './lib/util';
+
+// Místo pohledu smí být nejvýš takhle daleko od domu.
+export const CAMERA_MAX_M = 150;
 
 export type HouseInput = {
   lat: number;
@@ -23,6 +26,8 @@ export type HouseInput = {
   link: string | null;
   sv_heading: number | null;
   sv_pitch: number | null;
+  cam_lat: number | null;
+  cam_lng: number | null;
 };
 
 // Pole, která smí měnit návrh úprav (poloha a adresa včetně).
@@ -44,6 +49,8 @@ export const EDITABLE_FIELDS = [
   'link',
   'sv_heading',
   'sv_pitch',
+  'cam_lat',
+  'cam_lng',
 ] as const;
 
 type Form = Record<string, string | File | (string | File)[]>;
@@ -66,6 +73,7 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
   if (!municipality) return { error: 'Nepodařilo se zjistit obec. Doplň ji v části Opravit adresu.' };
 
 
+  const camera = parseCamera(form.cam_lat, form.cam_lng, lat, lng);
   const modifications = [...new Set(all(form, 'modifications').filter((m) => isKey(MODIFICATIONS, m)))];
   const thisYear = new Date().getFullYear();
 
@@ -92,8 +100,18 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
       link: url(form.link),
       sv_heading: num(form.sv_heading, 0, 360),
       sv_pitch: num(form.sv_pitch, -90, 90),
+      cam_lat: camera?.lat ?? null,
+      cam_lng: camera?.lng ?? null,
     },
   };
+};
+
+// Místo pohledu z ulice: platné jen blízko domu, jinak se ignoruje.
+export const parseCamera = (rawLat: unknown, rawLng: unknown, lat: number, lng: number) => {
+  const camLat = num(rawLat, BOUNDS.minLat, BOUNDS.maxLat);
+  const camLng = num(rawLng, BOUNDS.minLng, BOUNDS.maxLng);
+  if (camLat === null || camLng === null || distance(lat, lng, camLat, camLng) > CAMERA_MAX_M) return null;
+  return { lat: camLat, lng: camLng };
 };
 
 // Rozdíl mezi současným stavem a návrhem, jen u povolených polí.
@@ -131,4 +149,6 @@ export const FIELD_LABELS: Record<string, string> = {
   link: 'Odkaz',
   sv_heading: 'Natočení Street View',
   sv_pitch: 'Sklon Street View',
+  cam_lat: 'Místo pohledu z ulice (šířka)',
+  cam_lng: 'Místo pohledu z ulice (délka)',
 };

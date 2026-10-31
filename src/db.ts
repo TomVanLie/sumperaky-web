@@ -23,6 +23,8 @@ export type House = {
   link: string | null;
   sv_heading: number | null;
   sv_pitch: number | null;
+  cam_lat: number | null;
+  cam_lng: number | null;
   created_at: string;
   updated_at: string;
   approved_at: string | null;
@@ -58,7 +60,7 @@ export const mapPoints = async (db: D1Database) => {
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo,
               h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color, h.design,
-              h.country, h.year_built, h.year_renovated,
+              h.country, h.year_built, h.year_renovated, h.cam_lat, h.cam_lng,
               (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 1) AS yes_votes,
               (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 0) AS no_votes,
               (SELECT count(*) FROM comments k WHERE k.house_id = h.id AND k.status = 'visible') AS comments
@@ -68,7 +70,7 @@ export const mapPoints = async (db: D1Database) => {
       Pick<
         House,
         | 'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region'
-        | 'facade_color' | 'design' | 'country' | 'year_built' | 'year_renovated'
+        | 'facade_color' | 'design' | 'country' | 'year_built' | 'year_renovated' | 'cam_lat' | 'cam_lng'
       > & {
         mods: string | null;
         photo: string | null;
@@ -155,8 +157,8 @@ export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: 
     .prepare(
       `INSERT INTO houses (lat, lng, country, street, house_number, hide_number, municipality, municipality_slug,
                            district, region, state, design, roof, facade_color, year_built, year_renovated, note, link,
-                           sv_heading, sv_pitch, submitter_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+                           sv_heading, sv_pitch, cam_lat, cam_lng, submitter_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
       h.lat,
@@ -179,6 +181,8 @@ export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: 
       h.link,
       h.sv_heading,
       h.sv_pitch,
+      h.cam_lat,
+      h.cam_lng,
       submitterHash,
     )
     .first<{ id: number }>();

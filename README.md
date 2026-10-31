@@ -51,6 +51,8 @@ Panoramata jsou z [Mapy.com](https://developer.mapy.com) (`MAPY_API_KEY`). Tarif
 
 Panoramata pokrývají jen Česko. U ostatních domů zůstávají odkazy na Mapy.cz a Google Street View. Kód umí volitelně i Google (`GOOGLE_MAPS_KEY`), ten ale vyžaduje billing.
 
+Rohové domy bývají z nejbližšího panoramatu vidět z boční ulice. Proto jde u domu uložit místo pohledu (`cam_lat`, `cam_lng`, nejvýš 150 m od domu): panorama se pak hledá do 25 m od tohoto místa a natočí se na dům (`yaw` v radiánech). Místo pohledu jde zvolit při přidání domu a u existujícího domu ho navrhnout v detailu (schvaluje moderátor, v moderaci je náhled před a po).
+
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.
 
 ## Hlasování a komentáře

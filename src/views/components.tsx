@@ -27,7 +27,15 @@ export type CardHouse = Pick<House, 'id' | 'state' | 'street' | 'house_number' |
 };
 
 type PanoKeys = Pick<Bindings, 'MAPY_API_KEY' | 'GOOGLE_MAPS_KEY'>;
-type PanoHouse = { lat: number; lng: number; country?: string; sv_heading?: number | null; sv_pitch?: number | null };
+type PanoHouse = {
+  lat: number;
+  lng: number;
+  country?: string;
+  sv_heading?: number | null;
+  sv_pitch?: number | null;
+  cam_lat?: number | null;
+  cam_lng?: number | null;
+};
 
 // Náhled z ulice: přednostně Mapy.com (zdarma, jen Česko), jinak Google, pokud je nastavený klíč.
 export const panoUrl = (keys: PanoKeys, h: PanoHouse, small = false) => {

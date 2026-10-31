@@ -70,7 +70,7 @@ const formatKm = (d) => (d < 1 ? `${Math.max(10, Math.round((d * 1000) / 10) * 1
 const thumb = (f, width, height) => {
   const p = f.properties;
   const [lng, lat] = f.geometry.coordinates;
-  const src = p.p ? `/foto/${p.p}` : p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height) : null;
+  const src = p.p ? `/foto/${p.p}` : p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height, p.cam || null) : null;
   const box = el('div', { class: 'thumb' }, el('span', { class: 'thumb-empty' }, 'Bez náhledu'));
   if (src) {
     const img = el('img', { src, alt: '', loading: 'lazy' });
