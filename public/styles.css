@@ -186,7 +186,7 @@ fieldset.mods label { margin: 0.3rem 0; }
 .sheet-block .char-count { display: block; text-align: right; }
 /* Formulář komentáře se rozbalí až po kliknutí do něj. */
 .sheet-block .comment-form:not(:focus-within) :is(.char-count, input[name='nickname']) { display: none; }
-.sheet-block .comment-form { display: grid; gap: 0.35rem; }
+.sheet-block .comment-form { display: grid; gap: 0.35rem; break-inside: avoid; }
 .sheet-block.vote { background: none; border: 0; padding: 0; }
 .sheet-block .vote-summary { margin: 0; }
 .sheet-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.4rem; }
