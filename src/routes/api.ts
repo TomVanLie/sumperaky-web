@@ -82,13 +82,12 @@ api.get('/houses.geojson', async (c) => {
 api.get('/houses/:id{[0-9]+}', async (c) => {
   const house = await getHouse(c.env.DB, Number(c.req.param('id')));
   if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
+  const voter = await clientHash(c.req.header('CF-Connecting-IP'), c.env.IP_SALT);
   const [mods, photos, comments, votes] = await Promise.all([
     getModifications(c.env.DB, house.id),
     getPhotos(c.env.DB, house.id),
     getComments(c.env.DB, house.id),
-    c.env.DB.prepare('SELECT coalesce(sum(vote = 1), 0) AS yes, coalesce(sum(vote = 0), 0) AS no FROM votes WHERE house_id = ?')
-      .bind(house.id)
-      .first<{ yes: number; no: number }>(),
+    getVotes(c.env.DB, house.id, voter),
   ]);
   return c.json(
     {
@@ -109,14 +108,13 @@ api.get('/houses/:id{[0-9]+}', async (c) => {
       link: house.link,
       modifications: mods,
       photos: photos.map((p) => ({ key: p.r2_key, phase: p.phase, year: p.year_taken, caption: p.caption, author: p.author })),
-      votes: votes ?? { yes: 0, no: 0 },
-      commentCount: comments.length,
-      // Posledních pár komentářů, celé vlákno je na stránce domu.
-      comments: comments.slice(-3).map((k) => ({ nickname: k.nickname, body: k.body, createdAt: k.created_at })),
+      votes,
+      comments: comments.map((k) => ({ id: k.id, nickname: k.nickname, body: k.body, createdAt: k.created_at })),
       approvedAt: house.approved_at,
     },
     200,
-    { 'Cache-Control': 'public, max-age=60' },
+    // Obsahuje můj hlas, proto se nesmí sdílet v cache.
+    { 'Cache-Control': 'private, no-store' },
   );
 });
 

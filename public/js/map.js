@@ -1,6 +1,9 @@
 import { createAddWizard } from './addwizard.js';
 import { SUMP, createMap, getJson, mapyPano, maplibregl, stateColorExpr } from './common.js';
+import { ajaxForm, commentForm, ensureTurnstile, voteBox } from './forms.js';
 
+// Poloha z adresy (#zoom/lat/lng) se musí přečíst dřív, než ji mapa začne přepisovat.
+const initialHash = location.hash;
 const map = createMap('map', { hash: true });
 map.addControl(new maplibregl.NavigationControl(), 'top-right');
 map.addControl(new maplibregl.GeolocateControl({ fitBoundsOptions: { maxZoom: 14 } }), 'top-right');
@@ -101,11 +104,12 @@ const votes = (p) =>
 const highlight = (f) => map.getSource('selected')?.setData({ type: 'FeatureCollection', features: f ? [f] : [] });
 
 // ---------- Detail vybraného domu (nad mapou) ----------
+// Všechno podstatné je přímo tady: údaje, fotky, hlasování i komentáře. Výšku detailu jde měnit
+// tažením za spodní okraj, obrázek se přizpůsobí a detail se neposouvá.
 
-// Podrobnosti se dočítají z API, ať se nemusí proklikávat na stránku domu.
 const details = new Map();
-const loadDetails = (id) => {
-  if (!details.has(id)) details.set(id, getJson(`/api/houses/${id}`).catch(() => null));
+const loadDetails = (id, fresh = false) => {
+  if (fresh || !details.has(id)) details.set(id, getJson(`/api/houses/${id}`).catch(() => null));
   return details.get(id);
 };
 
@@ -114,8 +118,9 @@ const formatDate = (s) => {
   const [y, m, d] = String(s ?? '').slice(0, 10).split('-').map(Number);
   return y ? `${d}. ${m}. ${y}` : '';
 };
+const turnstileBox = () => el('div', { class: 'cf-turnstile' });
 
-const detailsBlock = (d) => {
+const factsBlock = (d) => {
   const facts = [
     ['Stav', SUMP.states[d.state]?.label],
     ['Návrh', SUMP.designs[d.design]],
@@ -128,15 +133,23 @@ const detailsBlock = (d) => {
     ['Kraj', d.region],
   ].filter(([, v]) => v);
   const mods = d.modifications.map((m) => SUMP.modifications[m]).filter(Boolean);
-  const total = d.votes.yes + d.votes.no;
-  const share = total ? Math.round((d.votes.yes / total) * 100) : 0;
-  return [
+  return el(
+    'section',
+    { class: 'sheet-block' },
     el('dl', { class: 'popup-facts' }, facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])),
     mods.length ? el('ul', { class: 'tags' }, mods.map((m) => el('li', {}, m))) : null,
     d.note ? el('p', { class: 'note' }, d.note) : null,
     d.link ? el('p', {}, el('a', { href: d.link, target: '_blank', rel: 'noopener nofollow ugc' }, 'Související odkaz ↗')) : null,
-    d.photos.length
-      ? el(
+  );
+};
+
+const photosBlock = (d) =>
+  d.photos.length
+    ? el(
+        'section',
+        { class: 'sheet-block' },
+        el('h3', {}, `Fotky (${d.photos.length})`),
+        el(
           'div',
           { class: 'sheet-photos' },
           d.photos.map((ph) =>
@@ -147,27 +160,94 @@ const detailsBlock = (d) => {
               el('figcaption', {}, [SUMP.photoPhases[ph.phase], ph.year].filter(Boolean).join(', ')),
             ),
           ),
-        )
-      : null,
+        ),
+      )
+    : null;
+
+// Hlasování přímo v detailu (stejné API jako na stránce domu).
+const voteBlock = (d) => {
+  const form = el(
+    'form',
+    { class: 'ajax vote-form', action: `/api/houses/${d.id}/vote`, method: 'post' },
+    turnstileBox(),
     el(
       'div',
-      { class: 'sheet-vote' },
-      el('strong', {}, 'Je to šumperák?'),
-      total ? el('div', { class: 'vote-bar' }, el('span', { class: 'vote-yes', style: `width:${share}%` })) : null,
-      el('span', { class: 'muted small' }, total ? `Ano si myslí ${people(d.votes.yes)}, ne ${people(d.votes.no)}.` : 'Zatím nikdo nehlasoval.'),
+      { class: 'vote-buttons' },
+      el('button', { class: 'btn btn-sm', type: 'submit', name: 'vote', value: 'yes', 'aria-pressed': String(d.votes.mine === 1) }, '👍 Ano'),
+      el('button', { class: 'btn btn-sm', type: 'submit', name: 'vote', value: 'no', 'aria-pressed': String(d.votes.mine === 0) }, '👎 Ne'),
     ),
-    d.comments.length
-      ? el(
-          'div',
-          { class: 'sheet-comments' },
-          el('strong', {}, `Komentáře (${d.commentCount})`),
-          d.comments.map((k) =>
-            el('blockquote', {}, el('p', {}, k.body), el('footer', { class: 'muted small' }, `${k.nickname ?? 'Anonym'}, ${formatDate(k.createdAt)}`)),
-          ),
-        )
-      : null,
-  ];
+    el('p', { class: 'form-msg small', role: 'status' }),
+  );
+  const total = d.votes.yes + d.votes.no;
+  const share = total ? Math.round((d.votes.yes / total) * 100) : 0;
+  const box = el(
+    'section',
+    { class: 'sheet-block vote' },
+    el('h3', {}, 'Je to šumperák?'),
+    el('div', { class: 'vote-bar', hidden: total ? null : '' }, el('span', { class: 'vote-yes', style: `width:${share}%` })),
+    el('p', { class: 'vote-summary muted small' }, total ? `Ano si myslí ${people(d.votes.yes)}, ne ${people(d.votes.no)}.` : 'Zatím nikdo nehlasoval.'),
+    form,
+  );
+  ajaxForm(form);
+  voteBox(box);
+  form.addEventListener('pointerenter', () => ensureTurnstile(form), { once: true });
+  form.addEventListener('ajax:success', () => loadDetails(d.id, true));
+  return box;
 };
+
+const commentsBlock = (d) => {
+  const form = el(
+    'form',
+    { class: 'ajax comment-form', action: `/api/houses/${d.id}/comments`, method: 'post' },
+    el('textarea', { name: 'body', rows: '2', minlength: '3', maxlength: '1000', required: '', placeholder: 'Víš o domě něco víc? Napiš komentář…', 'aria-label': 'Komentář' }),
+    el('span', { class: 'muted small char-count', 'data-max': '1000' }),
+    el('input', { name: 'nickname', maxlength: '40', placeholder: 'Přezdívka (nepovinná)', autocomplete: 'nickname', 'aria-label': 'Přezdívka' }),
+    el('label', { class: 'hp', 'aria-hidden': 'true' }, 'Nevyplňovat', el('input', { name: 'website', tabindex: '-1', autocomplete: 'off' })),
+    turnstileBox(),
+    el('button', { class: 'btn btn-sm btn-primary', type: 'submit' }, 'Přidat komentář'),
+    el('p', { class: 'form-msg small', role: 'status' }),
+  );
+  const box = el(
+    'section',
+    { class: 'sheet-block comments' },
+    el('h3', {}, d.comments.length ? `Komentáře (${d.comments.length})` : 'Komentáře'),
+    el(
+      'ol',
+      { class: 'comment-list' },
+      d.comments.map((k) =>
+        el('li', {}, el('header', {}, el('strong', {}, k.nickname ?? 'Anonym'), ' ', el('time', { class: 'muted' }, formatDate(k.createdAt))), el('p', {}, k.body)),
+      ),
+    ),
+    d.comments.length ? null : el('p', { class: 'muted small comment-empty' }, 'Zatím bez komentářů.'),
+    form,
+    el('p', { class: 'muted small' }, 'Anonymně. Odkazy se zobrazí až po kontrole. Nepiš osobní údaje o majitelích.'),
+  );
+  ajaxForm(form);
+  commentForm(form);
+  form.addEventListener('focusin', () => ensureTurnstile(form), { once: true });
+  form.addEventListener('ajax:success', () => loadDetails(d.id, true));
+  return box;
+};
+
+const moreBlock = (d) =>
+  el(
+    'section',
+    { class: 'sheet-block sheet-more' },
+    el('h3', {}, 'Další možnosti'),
+    el(
+      'p',
+      {},
+      el('a', { href: `/dum/${d.id}` }, 'Stránka domu'),
+      ' · ',
+      el('a', { href: `/dum/${d.id}#fotky-pridat` }, 'Přidat fotky'),
+      ' · ',
+      el('a', { href: `/dum/${d.id}#upravit` }, 'Navrhnout úpravu'),
+      ' · ',
+      el('a', { href: `/dum/${d.id}#pohled` }, 'Opravit pohled z ulice'),
+      ' · ',
+      el('a', { href: `/dum/${d.id}#nahlasit` }, 'Nahlásit'),
+    ),
+  );
 
 const openSheet = (f) => {
   const p = f.properties;
@@ -194,48 +274,88 @@ const openSheet = (f) => {
   const nav = el(
     'div',
     { class: 'sheet-nav' },
+    el(
+      'div',
+      { class: 'sheet-title' },
+      el('h2', {}, p.a),
+      badge(p.s),
+      p.r ? el('span', { class: 'muted small' }, p.r) : null,
+    ),
     button('‹ Předchozí', { disabled: index <= 0 ? '' : null, title: 'Předchozí dům (←)' }, () => step(-1)),
     el('span', { class: 'muted small' }, index >= 0 ? `${index + 1} / ${order.length}` : ''),
     button('Další ›', { disabled: index < 0 || index >= order.length - 1 ? '' : null, title: 'Další dům (→)' }, () => step(1)),
     button('✕', { 'aria-label': 'Zavřít detail', title: 'Zavřít (Esc)' }, closeSheet),
   );
 
-  const more = el('div', { class: 'sheet-details' }, el('p', { class: 'muted small' }, 'Načítám podrobnosti…'));
+  const info = el('div', { class: 'sheet-info' }, el('p', { class: 'muted small' }, 'Načítám podrobnosti…'));
+  const handle = el('div', { class: 'sheet-resize', role: 'separator', 'aria-orientation': 'horizontal', title: 'Táhni pro změnu výšky detailu' });
+  handle.addEventListener('pointerdown', startResize);
   sheet.replaceChildren(
     nav,
-    el('div', { class: 'sheet-media' }, main, alt, el('span', { class: 'muted small' }, 'Klikni na obrázek: zvětšení, posun, starší roky')),
-    el(
-      'div',
-      { class: 'sheet-body' },
-      el('h2', {}, el('a', { href: `/dum/${p.id}` }, p.a)),
-      el('p', { class: 'sheet-meta' }, badge(p.s), p.r ? el('span', { class: 'muted' }, p.r) : null),
-      more,
-      el(
-        'p',
-        { class: 'sheet-actions' },
-        el('a', { class: 'btn btn-primary', href: `/dum/${p.id}` }, 'Celý detail ›'),
-        el('a', { class: 'btn', href: `/dum/${p.id}#hlasovani` }, 'Hlasovat'),
-        el('a', { class: 'btn', href: `/dum/${p.id}#komentare` }, 'Komentovat'),
-      ),
-    ),
+    el('div', { class: 'sheet-content' }, el('div', { class: 'sheet-media' }, main, alt), info),
+    handle,
   );
   loadDetails(p.id).then((d) => {
     if (selectedId !== p.id) return;
-    if (d) more.replaceChildren(...detailsBlock(d).filter(Boolean));
-    else more.replaceChildren(el('p', { class: 'muted small' }, 'Podrobnosti se nepodařilo načíst.'));
+    if (!d) return info.replaceChildren(el('p', { class: 'muted small' }, 'Podrobnosti se nepodařilo načíst.'));
+    info.replaceChildren(...[factsBlock(d), voteBlock(d), photosBlock(d), commentsBlock(d), moreBlock(d)].filter(Boolean));
   });
 
   if (sheet.hidden) {
     sheet.hidden = false;
-    map.resize({ keepList: true });
+    setFilters(false);
+    applySheetHeight();
   }
-  sheet.scrollTop = 0;
   highlight(f);
   for (const li of list.children) li.classList.toggle('selected', Number(li.dataset.id) === p.id);
   list.querySelector('li.selected')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Vybraný dům je v adrese, odkaz jde poslat dál.
+  const url = new URL(location.href);
+  url.searchParams.set('dum', p.id);
+  history.replaceState(history.state, '', url);
   // Dům musí zůstat vidět i pod detailem.
   if (!map.getBounds().contains(f.geometry.coordinates)) map.easeTo({ center: f.geometry.coordinates }, { keepList: true });
 };
+
+// ---------- Výška detailu (táhlo na spodním okraji) ----------
+
+const SHEET_KEY = 'sump:sheet';
+const center = document.querySelector('.map-center');
+const sheetRatio = () => Number(localStorage.getItem(SHEET_KEY)) || 0.55;
+
+const applySheetHeight = (ratio = sheetRatio()) => {
+  const total = center.clientHeight;
+  const h = Math.round(Math.min(total - 120, Math.max(200, total * ratio)));
+  sheet.style.setProperty('--sheet-h', `${h}px`);
+  map.resize({ keepList: true });
+};
+
+let resizing = null;
+function startResize(e) {
+  e.preventDefault();
+  resizing = { y: e.clientY, h: sheet.getBoundingClientRect().height };
+  e.target.setPointerCapture(e.pointerId);
+  e.target.addEventListener('pointermove', onResize);
+  e.target.addEventListener('pointerup', endResize, { once: true });
+  document.body.classList.add('resizing');
+}
+let frame = 0;
+function onResize(e) {
+  if (!resizing) return;
+  const ratio = (resizing.h + e.clientY - resizing.y) / center.clientHeight;
+  cancelAnimationFrame(frame);
+  frame = requestAnimationFrame(() => {
+    applySheetHeight(ratio);
+    sheet.dataset.ratio = String(ratio);
+  });
+}
+function endResize(e) {
+  e.target.removeEventListener('pointermove', onResize);
+  document.body.classList.remove('resizing');
+  resizing = null;
+  if (sheet.dataset.ratio) localStorage.setItem(SHEET_KEY, sheet.dataset.ratio);
+}
+window.addEventListener('resize', () => !sheet.hidden && applySheetHeight());
 
 // Předchozí a další dům v pořadí seznamu vpravo. Seznam se přitom nepřepočítává.
 const step = (delta) => {
@@ -256,8 +376,22 @@ const closeSheet = () => {
   sheet.replaceChildren();
   highlight(null);
   for (const li of list.children) li.classList.remove('selected');
-  map.resize({ keepList: true });
+  const url = new URL(location.href);
+  url.searchParams.delete('dum');
+  history.replaceState(history.state, '', url);
+  setFilters(true);
 };
+
+// Levý panel s filtry: při otevřeném detailu se sbalí, ať má detail místo. Jde kdykoli rozbalit.
+const filtersToggle = document.getElementById('filters-toggle');
+const setFilters = (open) => {
+  layout.classList.toggle('filters-collapsed', !open);
+  filtersToggle.setAttribute('aria-expanded', String(open));
+  filtersToggle.textContent = open ? '‹ Skrýt filtry' : '☰ Filtry';
+  map.resize({ keepList: true });
+  if (!sheet.hidden) applySheetHeight();
+};
+filtersToggle.addEventListener('click', () => setFilters(layout.classList.contains('filters-collapsed')));
 
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || e.target.closest?.('input, textarea, select') || selectedId === null) return;
@@ -414,6 +548,14 @@ map.on('load', async () => {
   });
 
   refresh();
+
+  // Odkaz na konkrétní dům (?dum=ID): otevřít jeho detail, bez polohy v adrese rovnou na něj přiblížit.
+  const linked = Number(new URLSearchParams(location.search).get('dum'));
+  const target = linked && all.features.find((x) => x.properties.id === linked);
+  if (target) {
+    if (!initialHash) map.jumpTo({ center: target.geometry.coordinates, zoom: 17 });
+    openSheet(target);
+  }
 
   // Shluk: přiblížit na jeho domy a vypsat je vpravo.
   map.on('click', 'clusters', async (e) => {

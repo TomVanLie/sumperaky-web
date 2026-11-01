@@ -4,14 +4,14 @@ for (const form of document.querySelectorAll('form[data-confirm]')) {
   });
 }
 
-// Zkratky při schvalování: A schválit, Z zamítnout, šipka doprava přeskočit.
+// Zkratky při schvalování: A schválit (i s úpravami), Z zamítnout, šipka doprava přeskočit.
 const review = document.querySelector('.review');
 if (review) {
   document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, select')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, select, .maplibregl-map')) return;
     const key = e.key.toLowerCase();
-    if (key === 'a') review.querySelector('form[action$="/approve"]')?.requestSubmit();
-    else if (key === 'z') review.querySelector('form[action$="/reject"][data-confirm]')?.requestSubmit();
+    if (key === 'a') review.querySelector('[data-key="approve"]')?.click();
+    else if (key === 'z') review.querySelector('[data-key="reject"]')?.click();
     else if (e.key === 'ArrowRight') review.querySelector('[data-key="skip"]')?.click();
   });
 }

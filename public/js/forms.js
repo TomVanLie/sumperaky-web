@@ -51,9 +51,20 @@ for (const slots of document.querySelectorAll('.photo-slots')) {
   }
 }
 
+// Formuláře vložené do stránky až skriptem (detail domu v mapě) mají Turnstile vykreslený až při prvním použití.
+export const ensureTurnstile = (form) => {
+  const widget = form.querySelector('.cf-turnstile');
+  if (!widget || widget.dataset.rendered || !window.turnstile || widget.querySelector('iframe')) return;
+  widget.dataset.rendered = '1';
+  window.turnstile.render(widget, { sitekey: SUMP.turnstileSiteKey, appearance: 'interaction-only', language: 'cs' });
+};
+
 const turnstileToken = async (form) => {
   const input = () => form.querySelector('[name="cf-turnstile-response"]');
-  for (let i = 0; i < 50 && !input()?.value; i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 100 && !input()?.value; i++) {
+    ensureTurnstile(form);
+    await new Promise((r) => setTimeout(r, 100));
+  }
   return input()?.value;
 };
 
@@ -62,7 +73,7 @@ const resetTurnstile = (form) => {
   if (widget && window.turnstile) window.turnstile.reset(widget);
 };
 
-for (const form of document.querySelectorAll('form.ajax')) {
+export const ajaxForm = (form) => {
   const msg = form.querySelector('.form-msg');
   const show = (text, ok) => {
     if (!msg) return;
@@ -106,11 +117,12 @@ for (const form of document.querySelectorAll('form.ajax')) {
       resetTurnstile(form);
     }
   });
-}
+};
+for (const form of document.querySelectorAll('form.ajax')) ajaxForm(form);
 
 // Hlasování: po odeslání překreslí poměr a zvýrazní můj hlas.
 const people = (n) => `${n} ${n === 1 ? 'člověk' : n >= 2 && n <= 4 ? 'lidé' : 'lidí'}`;
-for (const box of document.querySelectorAll('.vote')) {
+export const voteBox = (box) => {
   box.querySelector('form').addEventListener('ajax:success', (e) => {
     const { yes, no, mine } = e.detail.votes;
     const total = yes + no;
@@ -124,10 +136,11 @@ for (const box of document.querySelectorAll('.vote')) {
       b.setAttribute('aria-pressed', String((b.value === 'yes' ? 1 : 0) === mine));
     }
   });
-}
+};
+for (const box of document.querySelectorAll('.vote')) voteBox(box);
 
 // Komentáře: nový se rovnou přidá do seznamu. Jen textContent, žádné HTML od uživatelů.
-for (const form of document.querySelectorAll('.comment-form')) {
+export const commentForm = (form) => {
   const textarea = form.querySelector('textarea');
   const counter = form.querySelector('.char-count');
   const updateCount = () => (counter.textContent = `${textarea.value.length} / ${counter.dataset.max}`);
@@ -153,7 +166,8 @@ for (const form of document.querySelectorAll('.comment-form')) {
     form.closest('.comments').querySelector('.comment-list').append(li);
     form.closest('.comments').querySelector('.comment-empty')?.remove();
   });
-}
+};
+for (const form of document.querySelectorAll('.comment-form')) commentForm(form);
 
 // Porovnání před a po.
 for (const fig of document.querySelectorAll('figure.compare')) {

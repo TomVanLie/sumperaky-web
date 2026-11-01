@@ -16,3 +16,10 @@ for (const fix of document.querySelectorAll('.cam-fix')) {
   const submit = fix.querySelector('button[type="submit"]');
   fix.addEventListener('cam-change', () => (submit.disabled = false));
 }
+
+// Odkaz z mapy na konkrétní akci (#upravit, #pohled…) rovnou otevře příslušný panel.
+const target = location.hash && document.getElementById(location.hash.slice(1));
+if (target?.tagName === 'DETAILS') {
+  target.open = true;
+  target.scrollIntoView({ block: 'start' });
+}

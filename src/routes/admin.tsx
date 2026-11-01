@@ -7,7 +7,7 @@ import { EDITABLE_FIELDS, FIELD_LABELS, diffHouse, parseHouseInput } from '../in
 import { requireAccess } from '../lib/access';
 import { mapyLink, streetViewLink } from '../lib/streetview';
 import { distance, formatDate, slugify, str } from '../lib/util';
-import { CameraPicker, FacadeSwatch, ModList, StateBadge, panoUrl } from '../views/components';
+import { CameraPicker, StateBadge, panoUrl } from '../views/components';
 import { HouseFields } from '../views/houseForm';
 import { Layout } from '../views/layout';
 import { servePhoto } from './files';
@@ -110,7 +110,7 @@ admin.get('/', async (c) => {
   const pendingComments = commentRows.filter((k) => k.status === 'pending').length;
 
   return c.html(
-    <Layout env={c.env} path="/admin" title="Moderace" map scripts={['/js/admin.js', '/js/house.js']}>
+    <Layout env={c.env} path="/admin" title="Moderace" map scripts={['/js/admin.js', '/js/campicker.js']}>
       <div class="page admin">
         <h1>Moderace</h1>
         <nav class="admin-nav">
@@ -130,28 +130,31 @@ admin.get('/', async (c) => {
             </p>
           )}
           {current && (
-            <article
-              class="review house"
-              data-lat={current.lat}
-              data-lng={current.lng}
-              data-state={current.state}
-            >
-              <div class="review-media">
-                {currentPano ? (
-                  <div class="sv-frame">
-                    <img class="zoomable" src={currentPano} alt="Pohled z ulice" onerror="this.parentElement.classList.add('pano-missing')" />
-                    <div class="sv-placeholder">Panorama tu není</div>
+            <article class="review">
+              <header class="review-head">
+                <p class="muted">
+                  Dům {position} z {pendingTotal} čekajících · #{current.id} · přidáno {formatDate(current.created_at)}
+                  {current.hide_number ? ' · číslo skryté' : ''}
+                </p>
+                <h3>{addressLine(current)}</h3>
+                {neighbours.length > 0 && (
+                  <div class="alert">
+                    <strong>Možná duplicita, v okolí už je:</strong>
+                    <ul>
+                      {neighbours.map((n) => (
+                        <li>
+                          <a href={`/admin/dum/${n.id}`}>#{n.id}</a> {addressLine(n)} (
+                          {n.status === 'approved' ? 'na mapě' : 'čeká'}, {n.distance} m)
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                ) : (
-                  <p class="muted">Bez klíče Mapy.com se panorama nezobrazí.</p>
                 )}
                 {(photosByHouse.get(current.id) ?? []).length > 0 && (
                   <div class="mod-photos">
                     {(photosByHouse.get(current.id) ?? []).map((p) => (
                       <figure>
-                        <a href={adminPhoto(p.r2_key)} target="_blank">
-                          <img class="zoomable" src={adminPhoto(p.r2_key)} alt="" />
-                        </a>
+                        <img class="zoomable" src={adminPhoto(p.r2_key)} alt="" />
                         <figcaption>
                           {PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} {p.year_taken ?? ''}
                         </figcaption>
@@ -160,71 +163,14 @@ admin.get('/', async (c) => {
                     ))}
                   </div>
                 )}
-              </div>
-              <div class="review-info">
-                <p class="muted">
-                  Dům {position} z {pendingTotal} čekajících · #{current.id} · přidáno{' '}
-                  {formatDate(current.created_at)}
-                </p>
-                <h3>{addressLine(current)}</h3>
-                <p class="meta">
-                  <StateBadge state={current.state} /> <FacadeSwatch color={current.facade_color} />
-                  <span class="tag">{DESIGNS[current.design as keyof typeof DESIGNS]}</span>
-                </p>
-                <p class="muted">
-                  {[current.district, current.region, current.country.toUpperCase()].filter(Boolean).join(' · ')}
-                  {current.hide_number ? ' · číslo skryté' : ''}
-                </p>
-                <ModList mods={currentMods} />
-                {(current.year_built || current.year_renovated) && (
-                  <p>
-                    {current.year_built ? `Postaveno ${current.year_built}. ` : ''}
-                    {current.year_renovated ? `Rekonstrukce ${current.year_renovated}.` : ''}
-                  </p>
-                )}
-                {current.note && <p class="note">{current.note}</p>}
-                {current.link && (
-                  <p>
-                    <a href={current.link} target="_blank" rel="noopener nofollow">
-                      {current.link}
-                    </a>
-                  </p>
-                )}
-                {neighbours.length > 0 && (
-                  <div class="alert">
-                    <strong>Možná duplicita, v okolí už je:</strong>
-                    <ul>
-                      {neighbours.map((n) => (
-                        <li>
-                          #{n.id} {addressLine(n)} ({n.status === 'approved' ? 'na mapě' : 'čeká'}, {n.distance} m)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <div id="mini-map" class="mini-map"></div>
-                <div class="review-actions">
-                  <Action action={`/admin/houses/${current.id}/approve`} label="✓ Schválit (A)" kind="btn-primary btn-lg" />
-                  <Action
-                    action={`/admin/houses/${current.id}/reject`}
-                    label="✕ Zamítnout (Z)"
-                    kind="btn-danger btn-lg"
-                    confirm="Opravdu smazat záznam i fotky?"
-                  />
-                  <a class="btn btn-lg" href={`/admin?po=${current.id}#domy`} data-key="skip">
-                    Přeskočit (→)
-                  </a>
-                </div>
-                <p>
-                  <a class="btn" href={`/admin/dum/${current.id}?zpet=${encodeURIComponent(`/admin?po=${skip}#domy`)}`}>
-                    ✎ Upravit údaje, pohled a přiblížení
-                  </a>
-                </p>
-                <p class="muted small">
-                  <a href={mapyLink(current)} target="_blank" rel="noopener">Procházet panorama na Mapy.cz</a> ·{' '}
-                  <a href={streetViewLink(current)} target="_blank" rel="noopener">Google Street View</a>
-                </p>
-              </div>
+              </header>
+              <HouseEditor
+                house={current}
+                mods={currentMods}
+                back={`/admin?po=${skip}#domy`}
+                hasPano={!!currentPano && !!c.env.MAPY_API_KEY}
+                review={{ skip: `/admin?po=${current.id}#domy` }}
+              />
             </article>
           )}
         </section>
@@ -512,6 +458,126 @@ admin.get('/domy', async (c) => {
   );
 });
 
+// Formulář úpravy domu: pohled z ulice (místo a přiblížení) a všechny údaje.
+// Při schvalování (review) má tlačítka Schválit, Zamítnout a Přeskočit.
+const HouseEditor = ({
+  house,
+  mods,
+  back,
+  hasPano,
+  review,
+}: {
+  house: House;
+  mods: string[];
+  back?: string;
+  hasPano: boolean;
+  review?: { skip: string };
+}) => (
+  <>
+    <form method="post" action={`/admin/dum/${house.id}`} class="admin-edit">
+      <input type="hidden" name="zpet" value={back ?? ''} />
+      <input type="hidden" name="lat" value={String(house.lat)} />
+      <input type="hidden" name="lng" value={String(house.lng)} />
+      <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
+      <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
+      <input type="hidden" name="district" value={house.district ?? ''} />
+      <div class="admin-edit-grid">
+        <section>
+          {hasPano ? (
+            <CameraPicker h={house} />
+          ) : (
+            <>
+              <p class="muted">Panorama z Mapy.com tu není (Slovensko nebo chybí klíč).</p>
+              <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
+              <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
+              <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
+            </>
+          )}
+          <p class="muted small">
+            <a href={mapyLink(house)} target="_blank" rel="noopener">
+              Procházet panorama na Mapy.cz
+            </a>{' '}
+            ·{' '}
+            <a href={streetViewLink(house)} target="_blank" rel="noopener">
+              Google Street View
+            </a>
+          </p>
+        </section>
+        <section>
+          {!review && (
+            <label>
+              Stav záznamu
+              <select name="status">
+                {Object.entries(HOUSE_STATUSES).map(([k, l]) => (
+                  <option value={k} selected={house.status === k}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div class="row">
+            <label>
+              Ulice
+              <input name="street" maxlength={120} value={house.street ?? ''} />
+            </label>
+            <label>
+              Číslo
+              <input name="house_number" maxlength={20} value={house.house_number ?? ''} />
+            </label>
+          </div>
+          <div class="row">
+            <label>
+              Obec
+              <input name="municipality" required maxlength={120} value={house.municipality} />
+            </label>
+            <label>
+              Kraj
+              <input name="region" maxlength={120} value={house.region ?? ''} />
+            </label>
+          </div>
+          <label class="check">
+            <input type="checkbox" name="hide_number" value="1" checked={!!house.hide_number} /> Nezobrazovat číslo domu
+          </label>
+          <HouseFields house={house} mods={mods} />
+        </section>
+      </div>
+      <div class="admin-edit-actions">
+        {review ? (
+          <>
+            <button class="btn btn-primary btn-lg" type="submit" name="schvalit" value="1" data-key="approve">
+              ✓ Schválit (A)
+            </button>
+            <button class="btn btn-danger btn-lg" type="submit" form={`reject-${house.id}`} data-key="reject">
+              ✕ Zamítnout (Z)
+            </button>
+            <a class="btn btn-lg" href={review.skip} data-key="skip">
+              Přeskočit (→)
+            </a>
+            <button class="btn btn-lg" type="submit">
+              Jen uložit
+            </button>
+          </>
+        ) : (
+          <>
+            <button class="btn btn-primary btn-lg" type="submit">
+              Uložit
+            </button>
+            {back && (
+              <a class="btn btn-lg" href={back}>
+                Zpět bez uložení
+              </a>
+            )}
+          </>
+        )}
+      </div>
+    </form>
+    {review && (
+      <form id={`reject-${house.id}`} method="post" action={`/admin/houses/${house.id}/reject`} data-confirm="Opravdu smazat záznam i fotky?"></form>
+    )}
+  </>
+);
+
 // Kam se vrátit po uložení: jen v rámci moderace.
 const backTo = (raw: string | null, id: number) =>
   raw && raw.startsWith('/admin') ? raw : `/admin/dum/${id}?ulozeno=1`;
@@ -541,76 +607,7 @@ admin.get('/dum/:id{[0-9]+}', async (c) => {
           <span class="tag">{HOUSE_STATUSES[house.status as keyof typeof HOUSE_STATUSES] ?? house.status}</span>{' '}
           {house.status === 'approved' && <a href={`/dum/${house.id}`}>Veřejný detail</a>}
         </p>
-        <form method="post" class="admin-edit">
-          <input type="hidden" name="zpet" value={back ?? ''} />
-          <input type="hidden" name="lat" value={String(house.lat)} />
-          <input type="hidden" name="lng" value={String(house.lng)} />
-          <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
-          <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
-          <input type="hidden" name="district" value={house.district ?? ''} />
-          <div class="admin-edit-grid">
-            <section>
-              <h2>Pohled z ulice</h2>
-              {hasPano ? (
-                <CameraPicker h={house} />
-              ) : (
-                <>
-                  <p class="muted">Panorama z Mapy.com tu není (Slovensko nebo chybí klíč).</p>
-                  <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
-                  <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
-                  <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
-                </>
-              )}
-            </section>
-            <section>
-              <h2>Údaje</h2>
-              <label>
-                Stav záznamu
-                <select name="status">
-                  {Object.entries(HOUSE_STATUSES).map(([k, l]) => (
-                    <option value={k} selected={house.status === k}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div class="row">
-                <label>
-                  Ulice
-                  <input name="street" maxlength={120} value={house.street ?? ''} />
-                </label>
-                <label>
-                  Číslo
-                  <input name="house_number" maxlength={20} value={house.house_number ?? ''} />
-                </label>
-              </div>
-              <div class="row">
-                <label>
-                  Obec
-                  <input name="municipality" required maxlength={120} value={house.municipality} />
-                </label>
-                <label>
-                  Kraj
-                  <input name="region" maxlength={120} value={house.region ?? ''} />
-                </label>
-              </div>
-              <label class="check">
-                <input type="checkbox" name="hide_number" value="1" checked={!!house.hide_number} /> Nezobrazovat číslo domu
-              </label>
-              <HouseFields house={house} mods={mods} />
-            </section>
-          </div>
-          <div class="admin-edit-actions">
-            <button class="btn btn-primary btn-lg" type="submit">
-              Uložit
-            </button>
-            {back && (
-              <a class="btn btn-lg" href={back}>
-                Zpět bez uložení
-              </a>
-            )}
-          </div>
-        </form>
+        <HouseEditor house={house} mods={mods} back={back} hasPano={hasPano} />
       </div>
     </Layout>,
   );
@@ -627,7 +624,8 @@ admin.post('/dum/:id{[0-9]+}', async (c) => {
   const changes = diffHouse({ ...house, modifications: await getModifications(db, house.id) }, data);
   // Kraj a stav záznamu návrhy veřejnosti neupravují, moderátor ano.
   if (data.region !== house.region) changes.region = { from: house.region, to: data.region };
-  const status = typeof form.status === 'string' && form.status in HOUSE_STATUSES && form.status !== house.status ? form.status : null;
+  const wanted = form.schvalit === '1' ? 'approved' : form.status;
+  const status = typeof wanted === 'string' && wanted in HOUSE_STATUSES && wanted !== house.status ? wanted : null;
 
   const columns = Object.keys(changes).filter((f) => f !== 'modifications');
   const sets = columns.map((f) => `${f} = ?`);
@@ -643,7 +641,12 @@ admin.post('/dum/:id{[0-9]+}', async (c) => {
   }
 
   if (sets.length || 'modifications' in changes) {
-    const label = status ? `Úprava moderátorem (${HOUSE_STATUSES[status as keyof typeof HOUSE_STATUSES].toLowerCase()})` : 'Úprava moderátorem';
+    const label =
+      status === 'approved' && house.status === 'pending' && Object.keys(changes).length === 0
+        ? 'Schváleno moderátorem'
+        : status
+          ? `Úprava moderátorem (${HOUSE_STATUSES[status as keyof typeof HOUSE_STATUSES].toLowerCase()})`
+          : 'Úprava moderátorem';
     await db.batch([
       db.prepare(`UPDATE houses SET ${[...sets, "updated_at = datetime('now')"].join(', ')} WHERE id = ?`).bind(...values, house.id),
       ...('modifications' in changes ? modificationStatements(db, house.id, data.modifications) : []),

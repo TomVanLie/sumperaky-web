@@ -97,6 +97,9 @@ pages.get('/', async (c) => {
           </a>
         </aside>
         <div class="map-center">
+          <button type="button" class="btn btn-sm filters-toggle" id="filters-toggle" aria-expanded="true">
+            ‹ Skrýt filtry
+          </button>
           <div id="map" class="map"></div>
           <section id="house-sheet" class="house-sheet" hidden aria-label="Vybraný dům"></section>
         </div>
@@ -407,7 +410,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
 
             <VoteBox houseId={house.id} votes={votes} siteKey={siteKey} />
 
-            <details class="panel">
+            <details class="panel" id="fotky-pridat">
               <summary>Přidat fotky</summary>
               <form class="ajax photo-form" action={`/api/houses/${house.id}/photos`} method="post" enctype="multipart/form-data">
                 <div class="photo-slots" data-slots="3"></div>
@@ -427,12 +430,12 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
               </form>
             </details>
 
-            <details class="panel">
+            <details class="panel" id="upravit">
               <summary>Navrhnout úpravu údajů</summary>
               <EditForm house={house} mods={mods} siteKey={siteKey} />
             </details>
 
-            <details class="panel">
+            <details class="panel" id="nahlasit">
               <summary>Nahlásit problém nebo požádat o skrytí</summary>
               <form class="ajax" action={`/api/houses/${house.id}/report`} method="post">
                 <label>
@@ -481,7 +484,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
 
 // Rohové domy bývají v panoramatu vidět z boční ulice. Tady jde zvolit místo, odkud se dívat (viz house.js).
 const CameraFix = ({ house, siteKey }: { house: House; siteKey: string }) => (
-  <details class="panel cam-fix">
+  <details class="panel cam-fix" id="pohled">
     <summary>Dům je na snímku malý, z boku nebo z jiné ulice? Oprav pohled</summary>
     <form class="ajax" action={`/api/houses/${house.id}/camera`} method="post">
       <CameraPicker h={house} />

@@ -134,7 +134,13 @@ fieldset.mods label { margin: 0.3rem 0; }
 
 .map-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; height: calc(100vh - var(--header-h)); }
 .map-layout.adding { grid-template-columns: 300px minmax(0, 1fr) 420px; }
-.map-center { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+.map-layout.filters-collapsed { grid-template-columns: 0 minmax(0, 1fr) 380px; }
+.map-layout.filters-collapsed.adding { grid-template-columns: 0 minmax(0, 1fr) 420px; }
+.map-layout.filters-collapsed .map-panel { visibility: hidden; padding: 0; border: 0; }
+.filters-toggle { position: absolute; z-index: 3; margin: 0.6rem; box-shadow: 0 1px 4px rgb(0 0 0 / 0.2); }
+.map-center { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+/* Mapa má pevně druhý řádek, jinak by bez otevřeného detailu spadla do prázdného řádku s nulovou výškou. */
+.map-center .map { grid-row: 2; }
 .map-panel { padding: 1rem 1.25rem; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); }
 .map-panel h1 { font-size: 1.4rem; margin: 0.2rem 0 0.4rem; }
 .map-panel .lead { font-size: 0.95rem; }
@@ -154,32 +160,43 @@ fieldset.mods label { margin: 0.3rem 0; }
 .results-more { margin: 0; padding: 0 0.5rem 0.5rem; }
 .results-more:has([hidden]) { display: none; }
 
-/* Detail vybraného domu nad mapou */
-.house-sheet { order: -1; position: relative; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 0.6rem 1.25rem; padding: 0 1rem 1rem; max-height: 52vh; overflow-y: auto; background: var(--surface); border-bottom: 1px solid var(--line); box-shadow: 0 6px 18px rgb(0 0 0 / 0.08); animation: sheet-in 0.18s ease-out; }
+/* Detail vybraného domu nad mapou: výška jde měnit táhlem, obsah se neposouvá */
+.house-sheet { grid-row: 1; position: relative; z-index: 2; height: var(--sheet-h, 45vh); display: grid; grid-template-rows: auto minmax(0, 1fr) 12px; background: var(--surface); box-shadow: 0 6px 18px rgb(0 0 0 / 0.1); animation: sheet-in 0.18s ease-out; }
 .house-sheet[hidden] { display: none; }
 @keyframes sheet-in { from { transform: translateY(-12px); opacity: 0; } }
-.sheet-nav { grid-column: 1 / -1; position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; margin: 0 -1rem; padding: 0.5rem 1rem; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(4px); border-bottom: 1px solid var(--line); }
+.sheet-nav { display: flex; padding-left: 7.5rem !important; align-items: center; gap: 0.5rem; padding: 0.45rem 0.75rem 0.45rem 1rem; border-bottom: 1px solid var(--line); }
+.sheet-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.6rem; }
+.sheet-title h2 { margin: 0; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-nav .btn:disabled { cursor: default; opacity: 0.4; }
-.sheet-details { display: grid; gap: 0.6rem; }
-.sheet-details .tags, .sheet-details .note, .sheet-details p { margin: 0; }
-.sheet-photos { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; }
-.sheet-photos figure { margin: 0; flex: none; width: 120px; }
+.sheet-content { display: grid; grid-template-columns: min(40%, calc((var(--sheet-h, 45vh) - 4.5rem) * 1.5)) minmax(0, 1fr); gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
+.sheet-media { position: relative; min-height: 0; }
+.sheet-media > .thumb { height: 100%; border-radius: 8px; }
+.sheet-alt { position: absolute; z-index: 2; left: 0.5rem; bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.5rem 0.25rem 0.25rem; border: 0; border-radius: 8px; background: rgb(255 255 255 / 0.92); font: inherit; font-size: 0.85rem; color: var(--brand); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25); }
+.sheet-alt .thumb { width: 64px; aspect-ratio: 16 / 10; }
+/* Údaje tečou do sloupců vedle sebe, ať je využitá šířka a detail se neposouvá dolů. */
+.sheet-info { min-height: 0; height: 100%; columns: 230px; column-gap: 1.5rem; column-fill: auto; overflow-x: auto; overflow-y: hidden; font-size: 0.9rem; }
+.sheet-block { break-inside: avoid; margin: 0 0 0.9rem; display: grid; gap: 0.4rem; }
+.sheet-block h3 { margin: 0; font-size: 0.95rem; }
+.sheet-block p, .sheet-block .tags, .sheet-block .note { margin: 0; }
+.sheet-block.comments { break-inside: auto; display: block; }
+.sheet-block.comments > * + * { margin-top: 0.4rem; }
+.sheet-block .comment-list { gap: 0.4rem; margin: 0; }
+.sheet-block .comment-list li { padding: 0.35rem 0.55rem; font-size: 0.85rem; break-inside: avoid; }
+.sheet-block textarea, .sheet-block input { margin-top: 0 !important; font-size: 0.9rem; }
+.sheet-block .char-count { display: block; text-align: right; }
+/* Formulář komentáře se rozbalí až po kliknutí do něj. */
+.sheet-block .comment-form:not(:focus-within) :is(.char-count, input[name='nickname']) { display: none; }
+.sheet-block .comment-form { display: grid; gap: 0.35rem; }
+.sheet-block.vote { background: none; border: 0; padding: 0; }
+.sheet-block .vote-summary { margin: 0; }
+.sheet-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 0.4rem; }
+.sheet-photos figure { margin: 0; }
 .sheet-photos img { aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
-.sheet-photos figcaption { font-size: 0.75rem; color: var(--muted); }
-.sheet-vote { display: grid; gap: 0.3rem; }
-.sheet-comments { display: grid; gap: 0.4rem; }
-.sheet-comments blockquote { margin: 0; padding: 0.4rem 0.6rem; background: #f6f4ef; border-radius: 8px; }
-.sheet-comments blockquote p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-size: 0.9rem; }
-.sheet-media { display: grid; gap: 0.4rem; align-content: start; }
-.sheet-media > .thumb { aspect-ratio: 16 / 10; }
-.sheet-alt { display: flex; align-items: center; gap: 0.5rem; padding: 0; border: 0; background: none; font: inherit; color: var(--brand); cursor: pointer; }
-.sheet-alt .thumb { width: 90px; aspect-ratio: 16 / 10; }
-.sheet-body { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
-.sheet-body h2 { margin: 0; font-size: 1.25rem; }
-.sheet-body h2 a { color: var(--ink); text-decoration: none; }
-.sheet-body h2 a:hover { text-decoration: underline; }
-.sheet-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0; }
-.sheet-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0; }
+.sheet-photos figcaption { font-size: 0.72rem; color: var(--muted); }
+.sheet-resize { cursor: row-resize; touch-action: none; display: grid; place-items: center; border-bottom: 1px solid var(--line); }
+.sheet-resize::before { content: ''; width: 48px; height: 4px; border-radius: 2px; background: #c9cdd4; }
+.sheet-resize:hover::before { background: var(--brand); }
+body.resizing { cursor: row-resize; user-select: none; }
 .hover-label .maplibregl-popup-content { padding: 0.25rem 0.55rem; font-size: 0.85rem; font-weight: 600; }
 
 /* Průvodce přidáním domu */
@@ -213,14 +230,17 @@ fieldset.mods label { margin: 0.3rem 0; }
 
 @media (max-width: 1100px) {
   .map-layout, .map-layout.adding { grid-template-columns: 260px minmax(0, 1fr) 340px; }
-  .house-sheet { grid-template-columns: 1fr; max-height: 60vh; }
 }
 @media (max-width: 860px) {
   .map-layout, .map-layout.adding { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
   .map-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .map-panel .filters fieldset { display: grid; grid-template-columns: 1fr 1fr; }
-  .map-center { grid-template-rows: 65vh auto; }
-  .house-sheet { max-height: none; }
+  .map-center { grid-template-rows: auto 65vh; }
+  .house-sheet { height: auto; grid-template-rows: auto auto; }
+  .sheet-content { grid-template-columns: 1fr; }
+  .sheet-media > .thumb { height: auto; aspect-ratio: 16 / 10; }
+  .sheet-info { columns: auto; height: auto; overflow: visible; }
+  .sheet-resize { display: none; }
   .side-panel { border-left: 0; border-top: 1px solid var(--line); }
   .results-list { max-height: 80vh; }
 }
