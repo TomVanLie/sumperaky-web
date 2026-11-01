@@ -55,6 +55,8 @@ Rohové domy bývají z nejbližšího panoramatu vidět z boční ulice. Proto 
 
 Přiblížení (`pano_fov`, zorný úhel v radiánech, výchozí 1) pomáhá u domů daleko od ulice. Volí se při přidání, v návrhu opravy pohledu i v moderaci. Kliknutím na pohled z ulice se otevře zvětšený náhled, ve kterém jde dál přibližovat (každý krok je nový snímek, 4 kredity).
 
+Ve zvětšeném náhledu jde pohled posouvat šipkami (směr k domu a roky snímků vrací `api.mapy.cz/v1/panorama/getbest`, který používá i oficiální JS knihovna, ale v dokumentaci REST API není). Starší roky a volné posouvání obstarává interaktivní prohlížeč Mapy.com (`panorama.js`, platí se za dlaždice, jedno otevření stojí zhruba 40 kreditů), proto se načítá až na kliknutí.
+
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.
 
 ## Mapa a přidávání

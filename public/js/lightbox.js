@@ -171,8 +171,12 @@ const openViewer = async (year) => {
     const yaw = view.house ? bearingRad(mark, view.house) + (view.yaw === null ? 0 : view.yaw - (view.best.lookDir * Math.PI) / 180) : view.yaw;
     $('img').hidden = true;
     live.hidden = false;
+    // Prohlížeč si rodiči nastaví vlastní třídu a styly, proto dostane vnitřní prvek s pevnou velikostí.
+    const parent = document.createElement('div');
+    parent.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+    live.append(parent);
     viewer = await Panorama.panoramaFromPid({
-      parent: live,
+      parent,
       pid: found.pid,
       apiKey: SUMP.mapyKey,
       yaw: (yaw + TAU) % TAU,
