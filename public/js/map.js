@@ -100,19 +100,79 @@ const votes = (p) =>
 
 const highlight = (f) => map.getSource('selected')?.setData({ type: 'FeatureCollection', features: f ? [f] : [] });
 
-// ---------- Detail vybraného domu (pod mapou) ----------
+// ---------- Detail vybraného domu (nad mapou) ----------
+
+// Podrobnosti se dočítají z API, ať se nemusí proklikávat na stránku domu.
+const details = new Map();
+const loadDetails = (id) => {
+  if (!details.has(id)) details.set(id, getJson(`/api/houses/${id}`).catch(() => null));
+  return details.get(id);
+};
+
+const people = (n) => `${n} ${n === 1 ? 'člověk' : n >= 2 && n <= 4 ? 'lidé' : 'lidí'}`;
+const formatDate = (s) => {
+  const [y, m, d] = String(s ?? '').slice(0, 10).split('-').map(Number);
+  return y ? `${d}. ${m}. ${y}` : '';
+};
+
+const detailsBlock = (d) => {
+  const facts = [
+    ['Stav', SUMP.states[d.state]?.label],
+    ['Návrh', SUMP.designs[d.design]],
+    ['Fasáda', d.facadeColor ? swatch(d.facadeColor) : null],
+    ['Střecha', SUMP.roofs[d.roof]],
+    ['Postaven', d.yearBuilt],
+    ['Rekonstrukce', d.yearRenovated],
+    ['Obec', el('a', { href: `/obec/${d.municipalitySlug}` }, d.municipality)],
+    ['Okres', d.district],
+    ['Kraj', d.region],
+  ].filter(([, v]) => v);
+  const mods = d.modifications.map((m) => SUMP.modifications[m]).filter(Boolean);
+  const total = d.votes.yes + d.votes.no;
+  const share = total ? Math.round((d.votes.yes / total) * 100) : 0;
+  return [
+    el('dl', { class: 'popup-facts' }, facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])),
+    mods.length ? el('ul', { class: 'tags' }, mods.map((m) => el('li', {}, m))) : null,
+    d.note ? el('p', { class: 'note' }, d.note) : null,
+    d.link ? el('p', {}, el('a', { href: d.link, target: '_blank', rel: 'noopener nofollow ugc' }, 'Související odkaz ↗')) : null,
+    d.photos.length
+      ? el(
+          'div',
+          { class: 'sheet-photos' },
+          d.photos.map((ph) =>
+            el(
+              'figure',
+              {},
+              el('img', { class: 'zoomable', src: `/foto/${ph.key}`, alt: ph.caption ?? SUMP.photoPhases[ph.phase] ?? '', loading: 'lazy' }),
+              el('figcaption', {}, [SUMP.photoPhases[ph.phase], ph.year].filter(Boolean).join(', ')),
+            ),
+          ),
+        )
+      : null,
+    el(
+      'div',
+      { class: 'sheet-vote' },
+      el('strong', {}, 'Je to šumperák?'),
+      total ? el('div', { class: 'vote-bar' }, el('span', { class: 'vote-yes', style: `width:${share}%` })) : null,
+      el('span', { class: 'muted small' }, total ? `Ano si myslí ${people(d.votes.yes)}, ne ${people(d.votes.no)}.` : 'Zatím nikdo nehlasoval.'),
+    ),
+    d.comments.length
+      ? el(
+          'div',
+          { class: 'sheet-comments' },
+          el('strong', {}, `Komentáře (${d.commentCount})`),
+          d.comments.map((k) =>
+            el('blockquote', {}, el('p', {}, k.body), el('footer', { class: 'muted small' }, `${k.nickname ?? 'Anonym'}, ${formatDate(k.createdAt)}`)),
+          ),
+        )
+      : null,
+  ];
+};
 
 const openSheet = (f) => {
   const p = f.properties;
   selectedId = p.id;
-  const mods = p.m ? p.m.split(',').map((m) => SUMP.modifications[m]).filter(Boolean) : [];
-  const facts = [
-    ['Návrh', SUMP.designs[p.d]],
-    ['Fasáda', p.c ? swatch(p.c) : null],
-    ['Postaven', p.yb || null],
-    ['Rekonstrukce', p.yr || null],
-    ['Úpravy', mods.length ? mods.join(', ') : null],
-  ].filter(([, v]) => v);
+  const index = order.findIndex((o) => o.properties.id === p.id);
 
   const pano = panoSrc(f, 1024, 640);
   const photo = p.p ? `/foto/${p.p}` : null;
@@ -126,35 +186,68 @@ const openSheet = (f) => {
     alt.lastChild.textContent = alt.lastChild.textContent === 'Pohled z ulice' ? 'Fotka' : 'Pohled z ulice';
   });
 
-  const close = el('button', { type: 'button', class: 'btn btn-sm sheet-close', 'aria-label': 'Zavřít detail' }, '✕');
-  close.addEventListener('click', closeSheet);
+  const button = (label, attrs, onClick) => {
+    const b = el('button', { type: 'button', class: 'btn btn-sm', ...attrs }, label);
+    b.addEventListener('click', onClick);
+    return b;
+  };
+  const nav = el(
+    'div',
+    { class: 'sheet-nav' },
+    button('‹ Předchozí', { disabled: index <= 0 ? '' : null, title: 'Předchozí dům (←)' }, () => step(-1)),
+    el('span', { class: 'muted small' }, index >= 0 ? `${index + 1} / ${order.length}` : ''),
+    button('Další ›', { disabled: index < 0 || index >= order.length - 1 ? '' : null, title: 'Další dům (→)' }, () => step(1)),
+    button('✕', { 'aria-label': 'Zavřít detail', title: 'Zavřít (Esc)' }, closeSheet),
+  );
 
+  const more = el('div', { class: 'sheet-details' }, el('p', { class: 'muted small' }, 'Načítám podrobnosti…'));
   sheet.replaceChildren(
-    el('div', { class: 'sheet-media' }, main, alt, el('span', { class: 'muted small' }, 'Klikni na obrázek pro zvětšení')),
+    nav,
+    el('div', { class: 'sheet-media' }, main, alt, el('span', { class: 'muted small' }, 'Klikni na obrázek: zvětšení, posun, starší roky')),
     el(
       'div',
       { class: 'sheet-body' },
-      close,
       el('h2', {}, el('a', { href: `/dum/${p.id}` }, p.a)),
       el('p', { class: 'sheet-meta' }, badge(p.s), p.r ? el('span', { class: 'muted' }, p.r) : null),
-      el('dl', { class: 'popup-facts' }, facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])),
-      votes(p),
+      more,
       el(
         'p',
         { class: 'sheet-actions' },
-        el('a', { class: 'btn btn-primary', href: `/dum/${p.id}` }, 'Detail, fotky a komentáře ›'),
-        el('a', { class: 'btn', href: `/dum/${p.id}#hlasovani` }, 'Je to šumperák?'),
+        el('a', { class: 'btn btn-primary', href: `/dum/${p.id}` }, 'Celý detail ›'),
+        el('a', { class: 'btn', href: `/dum/${p.id}#hlasovani` }, 'Hlasovat'),
+        el('a', { class: 'btn', href: `/dum/${p.id}#komentare` }, 'Komentovat'),
       ),
     ),
   );
+  loadDetails(p.id).then((d) => {
+    if (selectedId !== p.id) return;
+    if (d) more.replaceChildren(...detailsBlock(d).filter(Boolean));
+    else more.replaceChildren(el('p', { class: 'muted small' }, 'Podrobnosti se nepodařilo načíst.'));
+  });
+
   if (sheet.hidden) {
     sheet.hidden = false;
-    map.resize();
+    map.resize({ keepList: true });
   }
+  sheet.scrollTop = 0;
   highlight(f);
   for (const li of list.children) li.classList.toggle('selected', Number(li.dataset.id) === p.id);
-  // Dům musí zůstat vidět i nad zmenšenou mapou.
+  list.querySelector('li.selected')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  // Dům musí zůstat vidět i pod detailem.
   if (!map.getBounds().contains(f.geometry.coordinates)) map.easeTo({ center: f.geometry.coordinates }, { keepList: true });
+};
+
+// Předchozí a další dům v pořadí seznamu vpravo. Seznam se přitom nepřepočítává.
+const step = (delta) => {
+  const index = order.findIndex((o) => o.properties.id === selectedId);
+  const f = order[index + delta];
+  if (index < 0 || !f) return;
+  if (index + delta >= limit) {
+    limit = Math.ceil((index + delta + 1) / PAGE) * PAGE;
+    drawList();
+  }
+  openSheet(f);
+  map.easeTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 16) }, { keepList: true });
 };
 
 const closeSheet = () => {
@@ -163,9 +256,15 @@ const closeSheet = () => {
   sheet.replaceChildren();
   highlight(null);
   for (const li of list.children) li.classList.remove('selected');
-  map.resize();
+  map.resize({ keepList: true });
 };
-document.addEventListener('keydown', (e) => e.key === 'Escape' && !document.querySelector('dialog[open]') && closeSheet());
+
+document.addEventListener('keydown', (e) => {
+  if (document.querySelector('dialog[open]') || e.target.closest?.('input, textarea, select') || selectedId === null) return;
+  if (e.key === 'Escape') closeSheet();
+  else if (e.key === 'ArrowLeft') step(-1);
+  else if (e.key === 'ArrowRight') step(1);
+});
 
 // ---------- Seznam vpravo: domy ve výřezu mapy, nebo ve vybraném shluku ----------
 
@@ -201,33 +300,41 @@ const listItem = (f, center) => {
 
 const formatKm = (d) => (d < 1 ? `${Math.max(10, Math.round((d * 1000) / 10) * 10)} m` : `${d.toFixed(1).replace('.', ',')} km`);
 
+// Pořadí domů v seznamu (podle vzdálenosti od středu mapy). Podle něj jde i Předchozí a Další.
+let order = [];
+let listCenter = null;
+
 const renderList = () => {
   const data = filtered();
   const bounds = map.getBounds();
   const center = map.getCenter().toArray();
-  const inView = clusterIds ? data.filter((f) => clusterIds.has(f.properties.id)) : data.filter((f) => bounds.contains(f.geometry.coordinates));
-  inView.sort((a, b) => km(center, a.geometry.coordinates) - km(center, b.geometry.coordinates));
+  order = clusterIds ? data.filter((f) => clusterIds.has(f.properties.id)) : data.filter((f) => bounds.contains(f.geometry.coordinates));
+  order.sort((a, b) => km(center, a.geometry.coordinates) - km(center, b.geometry.coordinates));
+  // Vzdálenost od středu mapy má smysl až při přiblížení.
+  listCenter = map.getZoom() >= 11 ? center : null;
 
   listTitle.textContent = clusterIds
-    ? `${houses(inView.length)} ve shluku`
-    : inView.length
-      ? `${houses(inView.length)} ve výřezu mapy`
+    ? `${houses(order.length)} ve shluku`
+    : order.length
+      ? `${houses(order.length)} ve výřezu mapy`
       : 'Ve výřezu mapy nic není';
   clusterClear.hidden = !clusterIds;
-  const shown = inView.slice(0, limit);
-  // Vzdálenost od středu mapy má smysl až při přiblížení.
-  const showDistance = map.getZoom() >= 11;
-  list.replaceChildren(...shown.map((f) => listItem(f, showDistance ? center : null)));
-  if (!inView.length) list.append(el('li', { class: 'muted results-empty' }, 'Oddal mapu nebo uprav filtry.'));
-  more.hidden = inView.length <= limit;
-  more.textContent = `Načíst dalších ${Math.min(PAGE, inView.length - limit)} (zbývá ${inView.length - limit})`;
+  drawList();
+  list.scrollTop = 0;
+};
+
+const drawList = () => {
+  const scroll = list.scrollTop;
+  list.replaceChildren(...order.slice(0, limit).map((f) => listItem(f, listCenter)));
+  if (!order.length) list.append(el('li', { class: 'muted results-empty' }, 'Oddal mapu nebo uprav filtry.'));
+  list.scrollTop = scroll;
+  more.hidden = order.length <= limit;
+  more.textContent = `Načíst dalších ${Math.min(PAGE, order.length - limit)} (zbývá ${order.length - limit})`;
 };
 
 more.addEventListener('click', () => {
-  const scroll = list.scrollTop;
   limit += PAGE;
-  renderList();
-  list.scrollTop = scroll;
+  drawList();
 });
 
 clusterClear.addEventListener('click', () => {

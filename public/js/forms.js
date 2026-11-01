@@ -1,3 +1,5 @@
+import './lightbox.js';
+
 const SUMP = window.SUMP;
 
 const MAX_SIDE = 2000;
@@ -180,71 +182,3 @@ for (const box of document.querySelectorAll('.swatches')) {
     label.textContent = key ? SUMP.facadeColors[key].label : 'Barva nezvolena';
   });
 }
-
-// ---------- Zvětšení fotky nebo pohledu z ulice ----------
-// U panoramatu z Mapy.com jde v náhledu i přibližovat: každý krok načte nový snímek s užším záběrem.
-
-let lightbox;
-const openLightbox = (src, alt) => {
-  if (!lightbox) {
-    lightbox = document.createElement('dialog');
-    lightbox.className = 'lightbox';
-    lightbox.innerHTML = `
-      <img alt="" />
-      <div class="lightbox-bar">
-        <span class="lightbox-zoom">
-          <button type="button" class="btn btn-sm" data-step="-1" aria-label="Oddálit">−</button>
-          <span class="lightbox-level"></span>
-          <button type="button" class="btn btn-sm" data-step="1" aria-label="Přiblížit">+</button>
-        </span>
-        <button type="button" class="btn btn-sm lightbox-close">Zavřít ✕</button>
-      </div>`;
-    document.body.append(lightbox);
-    lightbox.querySelector('.lightbox-close').addEventListener('click', () => lightbox.close());
-    lightbox.addEventListener('click', (e) => e.target === lightbox && lightbox.close());
-    for (const b of lightbox.querySelectorAll('[data-step]')) {
-      b.addEventListener('click', () => zoomLightbox(Number(b.dataset.step)));
-    }
-  }
-  const img = lightbox.querySelector('img');
-  img.alt = alt || '';
-  setLightboxSrc(src);
-  lightbox.showModal();
-};
-
-const FOVS = SUMP.panoZooms.map((z) => z.fov);
-
-const setLightboxSrc = (src) => {
-  const url = new URL(src, location.href);
-  const pano = url.hostname === 'api.mapy.cz';
-  if (pano) {
-    url.searchParams.set('width', '1024');
-    url.searchParams.set('height', '640');
-  }
-  lightbox.querySelector('img').src = url.toString();
-  lightbox.querySelector('.lightbox-zoom').hidden = !pano;
-  if (pano) {
-    const fov = Number(url.searchParams.get('fov')) || 1;
-    const i = FOVS.findIndex((f) => Math.abs(f - fov) < 0.01);
-    lightbox.querySelector('.lightbox-level').textContent = i >= 0 ? SUMP.panoZooms[i].label : '';
-    lightbox.querySelector('[data-step="-1"]').disabled = fov >= FOVS[0];
-    lightbox.querySelector('[data-step="1"]').disabled = fov <= FOVS[FOVS.length - 1];
-  }
-};
-
-const zoomLightbox = (step) => {
-  const url = new URL(lightbox.querySelector('img').src);
-  const fov = Number(url.searchParams.get('fov')) || 1;
-  // Nejbližší úroveň ve směru přiblížení (menší fov) nebo oddálení.
-  const next = step > 0 ? FOVS.find((f) => f < fov - 0.001) : [...FOVS].reverse().find((f) => f > fov + 0.001);
-  if (!next) return;
-  url.searchParams.set('fov', String(next));
-  setLightboxSrc(url.toString());
-};
-
-document.addEventListener('click', (e) => {
-  const img = e.target.closest?.('img.zoomable');
-  if (!img || e.ctrlKey || e.metaKey) return;
-  e.preventDefault();
-  openLightbox(img.dataset.full || img.currentSrc || img.src, img.alt);
-});

@@ -3,8 +3,10 @@ import { REPORT_KINDS, isKey } from '../domain';
 import type { AppEnv } from '../env';
 import {
   addressLine,
+  getComments,
   getHouse,
   getModifications,
+  getPhotos,
   getVotes,
   housesNear,
   insertHouse,
@@ -74,6 +76,48 @@ api.get('/houses.geojson', async (c) => {
     },
   }));
   return c.json({ type: 'FeatureCollection', features }, 200, { 'Cache-Control': 'public, max-age=60' });
+});
+
+// Podrobnosti domu pro detail v mapě (aby se nemuselo proklikávat na stránku domu).
+api.get('/houses/:id{[0-9]+}', async (c) => {
+  const house = await getHouse(c.env.DB, Number(c.req.param('id')));
+  if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
+  const [mods, photos, comments, votes] = await Promise.all([
+    getModifications(c.env.DB, house.id),
+    getPhotos(c.env.DB, house.id),
+    getComments(c.env.DB, house.id),
+    c.env.DB.prepare('SELECT coalesce(sum(vote = 1), 0) AS yes, coalesce(sum(vote = 0), 0) AS no FROM votes WHERE house_id = ?')
+      .bind(house.id)
+      .first<{ yes: number; no: number }>(),
+  ]);
+  return c.json(
+    {
+      id: house.id,
+      address: addressLine(house),
+      municipality: house.municipality,
+      municipalitySlug: house.municipality_slug,
+      district: house.district,
+      region: house.region,
+      country: house.country,
+      state: house.state,
+      design: house.design,
+      roof: house.roof,
+      facadeColor: house.facade_color,
+      yearBuilt: house.year_built,
+      yearRenovated: house.year_renovated,
+      note: house.note,
+      link: house.link,
+      modifications: mods,
+      photos: photos.map((p) => ({ key: p.r2_key, phase: p.phase, year: p.year_taken, caption: p.caption, author: p.author })),
+      votes: votes ?? { yes: 0, no: 0 },
+      commentCount: comments.length,
+      // Posledních pár komentářů, celé vlákno je na stránce domu.
+      comments: comments.slice(-3).map((k) => ({ nickname: k.nickname, body: k.body, createdAt: k.created_at })),
+      approvedAt: house.approved_at,
+    },
+    200,
+    { 'Cache-Control': 'public, max-age=60' },
+  );
 });
 
 api.get('/geocode', async (c) => {
