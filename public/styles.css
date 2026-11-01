@@ -161,22 +161,24 @@ fieldset.mods label { margin: 0.3rem 0; }
 .results-more:has([hidden]) { display: none; }
 
 /* Detail vybraného domu nad mapou: výška jde měnit táhlem, obsah se neposouvá */
-.house-sheet { grid-row: 1; position: relative; z-index: 2; height: var(--sheet-h, 45vh); display: grid; grid-template-rows: auto minmax(0, 1fr) 12px; background: var(--surface); box-shadow: 0 6px 18px rgb(0 0 0 / 0.1); animation: sheet-in 0.18s ease-out; }
+.house-sheet { grid-row: 1; position: relative; z-index: 2; height: var(--sheet-h, 45vh); display: grid; grid-template-rows: auto minmax(0, 1fr) 16px; background: var(--surface); box-shadow: 0 6px 18px rgb(0 0 0 / 0.1); animation: sheet-in 0.18s ease-out; }
 .house-sheet[hidden] { display: none; }
 @keyframes sheet-in { from { transform: translateY(-12px); opacity: 0; } }
 .sheet-nav { display: flex; padding-left: 7.5rem !important; align-items: center; gap: 0.5rem; padding: 0.45rem 0.75rem 0.45rem 1rem; border-bottom: 1px solid var(--line); }
 .sheet-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 0.6rem; }
 .sheet-title h2 { margin: 0; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-nav .btn:disabled { cursor: default; opacity: 0.4; }
-.sheet-content { display: grid; grid-template-columns: min(40%, calc((var(--sheet-h, 45vh) - 4.5rem) * 1.5)) minmax(0, 1fr); gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
+/* Údaje mají omezenou šířku (nejvýš tři sloupce), všechno ostatní místo dostane obrázek. */
+.sheet-content { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 42%, 820px); gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
 .sheet-media { position: relative; min-height: 0; }
 .sheet-media > .thumb { height: 100%; border-radius: 8px; }
+.sheet-media > .thumb img { object-fit: contain; }
 .sheet-alt { position: absolute; z-index: 2; left: 0.5rem; bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.5rem 0.25rem 0.25rem; border: 0; border-radius: 8px; background: rgb(255 255 255 / 0.92); font: inherit; font-size: 0.85rem; color: var(--brand); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25); }
 .sheet-alt .thumb { width: 64px; aspect-ratio: 16 / 10; }
 /* Údaje tečou do sloupců vedle sebe, ať je využitá šířka a detail se neposouvá dolů. */
 .sheet-info { min-height: 0; height: 100%; columns: 230px; column-gap: 1.5rem; column-fill: auto; overflow-x: auto; overflow-y: hidden; font-size: 0.9rem; }
 .sheet-block { break-inside: avoid; margin: 0 0 0.9rem; display: grid; gap: 0.4rem; }
-.sheet-block h3 { margin: 0; font-size: 0.95rem; }
+.sheet-block h3 { margin: 0; font-size: 0.95rem; break-after: avoid; }
 .sheet-block p, .sheet-block .tags, .sheet-block .note { margin: 0; }
 .sheet-block.comments { break-inside: auto; display: block; }
 .sheet-block.comments > * + * { margin-top: 0.4rem; }
@@ -193,9 +195,10 @@ fieldset.mods label { margin: 0.3rem 0; }
 .sheet-photos figure { margin: 0; }
 .sheet-photos img { aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; }
 .sheet-photos figcaption { font-size: 0.72rem; color: var(--muted); }
-.sheet-resize { cursor: row-resize; touch-action: none; display: grid; place-items: center; border-bottom: 1px solid var(--line); }
-.sheet-resize::before { content: ''; width: 48px; height: 4px; border-radius: 2px; background: #c9cdd4; }
-.sheet-resize:hover::before { background: var(--brand); }
+.sheet-resize { cursor: row-resize; touch-action: none; display: grid; place-items: center; background: #f1f2f4; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.sheet-resize::before { content: ''; width: 72px; height: 5px; border-radius: 3px; background: #a9afb9; }
+.sheet-resize:hover, body.resizing .sheet-resize { background: #e3e8f0; }
+.sheet-resize:hover::before, body.resizing .sheet-resize::before { background: var(--brand); }
 body.resizing { cursor: row-resize; user-select: none; }
 .hover-label .maplibregl-popup-content { padding: 0.25rem 0.55rem; font-size: 0.85rem; font-weight: 600; }
 
@@ -238,7 +241,8 @@ body.resizing { cursor: row-resize; user-select: none; }
   .map-center { grid-template-rows: auto 65vh; }
   .house-sheet { height: auto; grid-template-rows: auto auto; }
   .sheet-content { grid-template-columns: 1fr; }
-  .sheet-media > .thumb { height: auto; aspect-ratio: 16 / 10; }
+  .sheet-media { aspect-ratio: 16 / 10; }
+
   .sheet-info { columns: auto; height: auto; overflow: visible; }
   .sheet-resize { display: none; }
   .side-panel { border-left: 0; border-top: 1px solid var(--line); }
@@ -410,13 +414,12 @@ form.inline { display: inline; }
 .lightbox-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #111; }
 .lightbox-pano { display: none; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
 .lightbox.is-pano .lightbox-pano { display: flex; }
-.lightbox-group, .lightbox-years { display: inline-flex; align-items: center; gap: 0.3rem; }
+.lightbox-years { display: inline-flex; align-items: center; gap: 0.3rem; }
 .lightbox .btn { background: #2a2d33; border-color: #3a3e46; color: #fff; }
 .lightbox .btn:hover { border-color: #fff; }
 .lightbox .btn[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); }
 .lightbox .btn:disabled { opacity: 0.35; cursor: default; }
 .lightbox .muted { color: #aab; }
-.lightbox-level { min-width: 2.5rem; text-align: center; font-weight: 600; }
 img.zoomable { cursor: zoom-in; }
 
 /* Moderace: úprava domu */

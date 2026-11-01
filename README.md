@@ -53,9 +53,9 @@ Panoramata pokrývají jen Česko. U ostatních domů zůstávají odkazy na Map
 
 Rohové domy bývají z nejbližšího panoramatu vidět z boční ulice. Proto jde u domu uložit místo pohledu (`cam_lat`, `cam_lng`, nejvýš 150 m od domu): panorama se pak hledá do 25 m od tohoto místa a natočí se na dům (`yaw` v radiánech). Místo pohledu jde zvolit při přidání domu a u existujícího domu ho navrhnout v detailu (schvaluje moderátor, v moderaci je náhled před a po).
 
-Přiblížení (`pano_fov`, zorný úhel v radiánech, výchozí 1) pomáhá u domů daleko od ulice. Volí se při přidání, v návrhu opravy pohledu i v moderaci. Kliknutím na pohled z ulice se otevře zvětšený náhled, ve kterém jde dál přibližovat (každý krok je nový snímek, 4 kredity).
+Přiblížení (`pano_fov`, zorný úhel v radiánech, výchozí 1) pomáhá u domů daleko od ulice. Volí se při přidání, v návrhu opravy pohledu i v moderaci.
 
-Ve zvětšeném náhledu jde pohled posouvat šipkami (směr k domu a roky snímků vrací `api.mapy.cz/v1/panorama/getbest`, který používá i oficiální JS knihovna, ale v dokumentaci REST API není). Starší roky a volné posouvání obstarává interaktivní prohlížeč Mapy.com (`panorama.js`, platí se za dlaždice, jedno otevření stojí zhruba 40 kreditů), proto se načítá až na kliknutí.
+Kliknutím na pohled z ulice se otevře interaktivní prohlížeč Mapy.com (`panorama.js`): táhnutím se posouvá, kolečkem přibližuje a jde přepnout na starší roky snímků. Roky a polohu snímku vrací `api.mapy.cz/v1/panorama/getbest`, který používá i oficiální JS knihovna, ale v dokumentaci REST API není. Prohlížeč se platí za dlaždice (zhruba 40 kreditů za otevření), proto se načítá až na kliknutí. V detailu domu v mapě se statický snímek stahuje přesně v poměru stran volného místa.
 
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.
 

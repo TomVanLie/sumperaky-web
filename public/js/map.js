@@ -254,16 +254,19 @@ const openSheet = (f) => {
   selectedId = p.id;
   const index = order.findIndex((o) => o.properties.id === p.id);
 
-  const pano = panoSrc(f, 1024, 640);
+  const pano = panoSrc(f, 400, 250);
   const photo = p.p ? `/foto/${p.p}` : null;
-  const main = thumb(photo ?? pano, { zoomable: true });
+  media = { f, mode: photo ? 'photo' : 'pano', aspect: 0 };
+  const main = thumb(null, { zoomable: true });
   // Vlastní fotka i pohled z ulice: druhý obrázek jde přepnout.
   const alt = photo && pano ? el('button', { type: 'button', class: 'sheet-alt' }, thumb(pano), el('span', {}, 'Pohled z ulice')) : null;
   alt?.addEventListener('click', () => {
-    const img = main.querySelector('img');
-    const other = alt.querySelector('img');
-    if (img && other) [img.src, other.src] = [other.src, img.src];
-    alt.lastChild.textContent = alt.lastChild.textContent === 'Pohled z ulice' ? 'Fotka' : 'Pohled z ulice';
+    const toPano = media.mode === 'photo';
+    media.mode = toPano ? 'pano' : 'photo';
+    media.aspect = 0;
+    alt.querySelector('img').src = toPano ? photo : pano;
+    alt.lastChild.textContent = toPano ? 'Fotka' : 'Pohled z ulice';
+    fitMedia();
   });
 
   const button = (label, attrs, onClick) => {
@@ -306,6 +309,7 @@ const openSheet = (f) => {
     setFilters(false);
     applySheetHeight();
   }
+  requestAnimationFrame(fitMedia);
   highlight(f);
   for (const li of list.children) li.classList.toggle('selected', Number(li.dataset.id) === p.id);
   list.querySelector('li.selected')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -315,6 +319,39 @@ const openSheet = (f) => {
   history.replaceState(history.state, '', url);
   // Dům musí zůstat vidět i pod detailem.
   if (!map.getBounds().contains(f.geometry.coordinates)) map.easeTo({ center: f.geometry.coordinates }, { keepList: true });
+};
+
+// Pohled z ulice se stahuje přesně v poměru stran místa, které má k dispozici, takže ho celé vyplní.
+// Nový snímek (4 kredity) jen při znatelné změně tvaru, ne při každém pohybu táhla.
+let media = null;
+const fitMedia = () => {
+  const box = sheet.querySelector('.sheet-media');
+  const img = box?.querySelector('.thumb img') ?? null;
+  if (!box || !media) return;
+  const { f, mode } = media;
+  let src;
+  if (mode === 'photo') {
+    if (media.aspect) return;
+    media.aspect = 1;
+    src = `/foto/${f.properties.p}`;
+  } else {
+    const w = box.clientWidth;
+    const h = box.clientHeight;
+    if (!w || !h) return;
+    const aspect = w / h;
+    if (media.aspect && Math.abs(aspect / media.aspect - 1) < 0.08) return;
+    media.aspect = aspect;
+    const scale = 1024 / Math.max(w, h);
+    src = panoSrc(f, Math.max(10, Math.round(w * scale)), Math.max(10, Math.round(h * scale)));
+  }
+  const thumbBox = box.querySelector('.thumb');
+  if (!src) return;
+  if (img) img.src = src;
+  else {
+    const fresh = el('img', { src, alt: '', class: 'zoomable' });
+    fresh.addEventListener('error', () => fresh.remove());
+    thumbBox.append(fresh);
+  }
 };
 
 // ---------- Výška detailu (táhlo na spodním okraji) ----------
@@ -354,8 +391,15 @@ function endResize(e) {
   document.body.classList.remove('resizing');
   resizing = null;
   if (sheet.dataset.ratio) localStorage.setItem(SHEET_KEY, sheet.dataset.ratio);
+  requestAnimationFrame(fitMedia);
 }
-window.addEventListener('resize', () => !sheet.hidden && applySheetHeight());
+let resizeTimer;
+window.addEventListener('resize', () => {
+  if (sheet.hidden) return;
+  applySheetHeight();
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(fitMedia, 300);
+});
 
 // Předchozí a další dům v pořadí seznamu vpravo. Seznam se přitom nepřepočítává.
 const step = (delta) => {
@@ -389,7 +433,10 @@ const setFilters = (open) => {
   filtersToggle.setAttribute('aria-expanded', String(open));
   filtersToggle.textContent = open ? '‹ Skrýt filtry' : '☰ Filtry';
   map.resize({ keepList: true });
-  if (!sheet.hidden) applySheetHeight();
+  if (!sheet.hidden) {
+    applySheetHeight();
+    requestAnimationFrame(fitMedia);
+  }
 };
 filtersToggle.addEventListener('click', () => setFilters(layout.classList.contains('filters-collapsed')));
 
