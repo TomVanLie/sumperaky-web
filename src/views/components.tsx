@@ -1,4 +1,4 @@
-import { FACADE_COLORS, MODIFICATIONS, STATES, isKey } from '../domain';
+import { FACADE_COLORS, MODIFICATIONS, PANO_ZOOMS, STATES, isKey } from '../domain';
 import { addressLine, type House } from '../db';
 import type { Bindings } from '../env';
 import { mapyLink, mapyPanoStatic, streetViewEmbed, streetViewLink, streetViewStatic } from '../lib/streetview';
@@ -35,6 +35,7 @@ type PanoHouse = {
   sv_pitch?: number | null;
   cam_lat?: number | null;
   cam_lng?: number | null;
+  pano_fov?: number | null;
 };
 
 // Náhled z ulice: přednostně Mapy.com (zdarma, jen Česko), jinak Google, pokud je nastavený klíč.
@@ -69,7 +70,7 @@ export const StreetView = ({ h, keys }: { h: House; keys: PanoKeys }) => {
   return (
     <section class="streetview">
       <div class={img ? 'sv-frame' : 'sv-frame pano-missing'} data-embed={!fromMapy && keys.GOOGLE_MAPS_KEY ? streetViewEmbed(keys.GOOGLE_MAPS_KEY, h) : undefined}>
-        {img && <img src={img} alt="Pohled z ulice" onerror={hideOnError} />}
+        {img && <img class="zoomable" src={img} alt="Pohled z ulice" onerror={hideOnError} />}
         <div class="sv-placeholder">Pohled z ulice zde není k dispozici</div>
         {!fromMapy && keys.GOOGLE_MAPS_KEY && (
           <button type="button" class="btn sv-interactive">
@@ -87,6 +88,51 @@ export const StreetView = ({ h, keys }: { h: House; keys: PanoKeys }) => {
     </section>
   );
 };
+
+// Přiblížení pohledu z ulice. Výchozí (1×) se ukládá jako prázdná hodnota.
+export const ZoomChips = ({ selected }: { selected?: number | null }) => (
+  <fieldset class="chips chips-sm zoom-chips">
+    <legend>Přiblížení</legend>
+    {PANO_ZOOMS.map((z) => (
+      <label>
+        <input
+          type="radio"
+          name="pano_fov"
+          value={z.fov === 1 ? '' : String(z.fov)}
+          checked={z.fov === 1 ? !selected : selected != null && Math.abs(selected - z.fov) < 0.01}
+        />
+        <span>{z.label}</span>
+      </label>
+    ))}
+  </fieldset>
+);
+
+// Výběr místa pohledu a přiblížení: mapa, živý náhled a skrytá pole cam_lat, cam_lng, pano_fov (viz campicker.js).
+export const CameraPicker = ({ h }: { h: PanoHouse & { state?: string } }) => (
+  <div
+    class="cam-picker"
+    data-lat={h.lat}
+    data-lng={h.lng}
+    data-state={h.state}
+    data-cam={h.cam_lat != null ? `${h.cam_lng},${h.cam_lat}` : ''}
+    data-fov={h.pano_fov ?? ''}
+  >
+    <p class="muted small">
+      Klikni v mapě na ulici před průčelím domu (👁 jde přetáhnout). Náhled se hned změní.
+    </p>
+    <div class="cam-picker-map"></div>
+    <div class="sv-frame cam-picker-preview">
+      <img alt="Náhled pohledu z ulice" />
+      <div class="sv-placeholder">Na tomhle místě panorama není. Klikni přímo na silnici.</div>
+    </div>
+    <div class="cam-picker-tools">
+      <ZoomChips selected={h.pano_fov} />
+      <button type="button" class="btn btn-sm cam-auto">Automatický pohled</button>
+    </div>
+    <input type="hidden" name="cam_lat" value={h.cam_lat ?? ''} />
+    <input type="hidden" name="cam_lng" value={h.cam_lng ?? ''} />
+  </div>
+);
 
 export const FacadeSwatch = ({ color }: { color: string | null }) =>
   color && isKey(FACADE_COLORS, color) ? (

@@ -7,6 +7,7 @@ type Pos = {
   sv_pitch?: number | null;
   cam_lat?: number | null;
   cam_lng?: number | null;
+  pano_fov?: number | null;
 };
 
 // Odkazy fungují vždy, bez API klíče (oficiální Google Maps URLs).
@@ -31,13 +32,18 @@ export const mapyPanoStatic = (key: string, h: Pos, width = 1024, height = 640) 
     lon: String(cam?.lng ?? h.lng),
     lat: String(cam?.lat ?? h.lat),
     yaw: cam ? ((bearing(cam.lat, cam.lng, h.lat, h.lng) * Math.PI) / 180).toFixed(3) : 'point',
-    fov: '1',
+    fov: String(h.pano_fov ?? PANO_FOV),
     lang: 'cs',
     apikey: key,
   });
   if (cam) p.set('radius', String(CAMERA_RADIUS_M));
   return `https://api.mapy.cz/v1/static/pano?${p}`;
 };
+
+// Výchozí zorný úhel (radiány). Menší číslo = větší přiblížení, API dovolí 0,16 až 1,57.
+export const PANO_FOV = 1;
+export const PANO_FOV_MIN = 0.16;
+export const PANO_FOV_MAX = 1.57;
 
 // Jak daleko od zvoleného místa smí být panorama (aby natočení na dům sedělo).
 export const CAMERA_RADIUS_M = 25;

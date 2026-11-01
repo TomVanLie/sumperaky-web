@@ -15,7 +15,8 @@ import {
 } from '../db';
 import { FIELD_LABELS } from '../input';
 import { clientHash, formatDate } from '../lib/util';
-import { FacadeSwatch, FacadeSwatches, HouseCard, ModList, StateBadge, StreetView, photoUrl, type CardHouse } from '../views/components';
+import { CameraPicker, FacadeSwatch, FacadeSwatches, HouseCard, ModList, StateBadge, StreetView, ZoomChips, photoUrl, type CardHouse } from '../views/components';
+import { HouseFields } from '../views/houseForm';
 import { Layout, Turnstile } from '../views/layout';
 
 export const pages = new Hono<AppEnv>();
@@ -40,7 +41,7 @@ pages.get('/', async (c) => {
   ).first<{ total: number; renovated: number | null; municipalities: number }>();
 
   return c.html(
-    <Layout env={c.env} path="/" map scripts={['/js/map.js']} bodyClass="map-page">
+    <Layout env={c.env} path="/" map turnstile scripts={['/js/map.js']} bodyClass="map-page">
       <div class="map-layout">
         <aside class="map-panel">
           <h1>Mapa šumperáků</h1>
@@ -91,24 +92,185 @@ pages.get('/', async (c) => {
             </label>
           </form>
           <p class="muted" id="result-count"></p>
-          <a class="btn btn-primary btn-block" href="/pridat">
+          <a class="btn btn-primary btn-block" href="/pridat" id="add-start">
             + Přidat šumperák
           </a>
         </aside>
-        <div id="map" class="map"></div>
-        <aside id="results" class="results-panel" hidden aria-label="Domy v okolí">
-          <header>
-            <h2 id="results-title"></h2>
-            <button type="button" class="btn btn-sm" id="results-close" aria-label="Zavřít panel">
-              ✕
-            </button>
-          </header>
-          <ul id="results-list" class="results-list"></ul>
+        <div class="map-center">
+          <div id="map" class="map"></div>
+          <section id="house-sheet" class="house-sheet" hidden aria-label="Vybraný dům"></section>
+        </div>
+        <aside class="side-panel">
+          <div id="browse" class="browse" aria-label="Domy na mapě">
+            <header class="side-head">
+              <h2 id="results-title">Domy na mapě</h2>
+              <button type="button" class="chip-link" id="cluster-clear" hidden>
+                Zrušit výběr shluku ×
+              </button>
+            </header>
+            <ul id="results-list" class="results-list"></ul>
+            <p class="results-more">
+              <button type="button" class="btn btn-block" id="results-more" hidden>
+                Načíst dalších 10
+              </button>
+            </p>
+          </div>
+          <AddPanel siteKey={c.env.TURNSTILE_SITE_KEY} />
         </aside>
       </div>
     </Layout>,
   );
 });
+
+// Přidání domu přímo v mapě, krok za krokem (viz addwizard.js). Formulář se odesílá bez přesměrování.
+const QUICK_STATES = ['original', 'partial', 'in_progress', 'renovated', 'unknown'] as const;
+
+const AddPanel = ({ siteKey }: { siteKey: string }) => (
+  <div id="add-panel" class="add-panel" hidden>
+    <header class="side-head">
+      <h2>Přidat šumperák</h2>
+      <button type="button" class="btn btn-sm" id="add-close" aria-label="Zavřít přidávání">
+        ✕
+      </button>
+    </header>
+    <ol class="stepper">
+      <li data-step="1">Místo</li>
+      <li data-step="2">Údaje</li>
+      <li data-step="3">Hotovo</li>
+    </ol>
+    <div class="add-body">
+      <form id="add-form" class="ajax" data-stay="1" action="/api/houses" method="post" enctype="multipart/form-data" data-validate="validateAdd">
+        <section class="add-step" data-step="1">
+          <p class="add-hint">
+            <strong>Klikni do mapy na dům</strong>, nebo napiš adresu.
+          </p>
+          <div class="geosearch">
+            <input type="search" id="address-search" placeholder="Adresa, např. Lidická 12, Šumperk" autocomplete="off" />
+            <ul id="address-results" class="suggestions" hidden></ul>
+          </div>
+          <p class="map-legend muted small">
+            <span class="dot" style="--c:#2f9e5b"></span> přidáno tebou, čeká na schválení
+          </p>
+        </section>
+
+        <input type="hidden" name="lat" />
+        <input type="hidden" name="lng" />
+        <input type="hidden" name="country" />
+        <input type="hidden" name="district" />
+        <input type="hidden" name="region" />
+        <input type="hidden" name="cam_lat" />
+        <input type="hidden" name="cam_lng" />
+
+        <section id="picked" class="add-step picked" data-step="2" hidden>
+          <h3 id="picked-address">Vybraný dům</h3>
+          <p class="muted small">Není to ono? Klikni v mapě vedle, nebo přetáhni špendlík.</p>
+          <div id="duplicates" class="alert" hidden></div>
+
+          <div class="picked-media">
+            <div class="sv-frame picked-pano">
+              <img id="picked-pano" alt="Pohled z ulice" hidden />
+              <div class="sv-placeholder" id="pano-missing-text">
+                U tohoto místa panorama z ulice není.
+              </div>
+            </div>
+            <ZoomChips />
+            <div class="cam-tools">
+              <button type="button" class="btn btn-sm" id="cam-pick">
+                🔄 Dům je vidět z boku? Vyber ulici před průčelím
+              </button>
+              <button type="button" class="btn btn-sm" id="cam-reset" hidden>
+                Zpět na automatický pohled
+              </button>
+              <p class="cam-hint small" id="cam-hint" hidden>
+                👆 Klikni v mapě na ulici, ze které je vidět průčelí domu (nejvýš 150 m od domu).
+              </p>
+            </div>
+          </div>
+
+          <fieldset class="chips">
+            <legend>Jak dům vypadá teď?</legend>
+            {QUICK_STATES.map((k) => (
+              <label>
+                <input type="radio" name="state" value={k} checked={k === 'unknown'} />
+                <span>{k === 'unknown' ? 'Nevím' : STATES[k].label}</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset class="chips">
+            <legend>Návrh</legend>
+            {Object.entries(DESIGNS).map(([k, l]) => (
+              <label>
+                <input type="radio" name="design" value={k} checked={k === 'original'} />
+                <span>{l}</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <FacadeSwatches picker />
+
+          <Turnstile siteKey={siteKey} />
+          <button class="btn btn-primary btn-lg btn-block" type="submit">
+            Přidat šumperák
+          </button>
+          <p class="form-msg" role="status"></p>
+          <p class="muted small">
+            Odesláním souhlasíš se zveřejněním údajů pod licencí CC BY-SA 4.0 a se{' '}
+            <a href="/soukromi">zásadami ochrany soukromí</a>. Dům se na mapě objeví po kontrole.
+          </p>
+
+          <details class="panel">
+            <summary>Opravit adresu</summary>
+            <div class="row">
+              <label>
+                Ulice
+                <input name="street" maxlength={120} />
+              </label>
+              <label>
+                Číslo
+                <input name="house_number" maxlength={20} />
+              </label>
+            </div>
+            <label>
+              Obec
+              <input name="municipality" maxlength={120} />
+            </label>
+            <label class="check">
+              <input type="checkbox" name="hide_number" value="1" /> Nezobrazovat veřejně číslo domu
+            </label>
+          </details>
+
+          <details class="panel">
+            <summary>Doplnit podrobnosti a vlastní fotky (nepovinné)</summary>
+            <HouseFields withState={false} />
+            <h3>Vlastní fotky</h3>
+            <p class="muted small">
+              Hodí se hlavně fotky před a po rekonstrukci. Před nahráním se zmenší a odstraní se z nich GPS. Foť jen z
+              ulice a bez lidí a SPZ.
+            </p>
+            <div class="photo-slots" data-slots="6"></div>
+            <label>
+              Autor fotek
+              <input name="author" maxlength={80} />
+            </label>
+          </details>
+        </section>
+      </form>
+
+      <section class="add-step add-done" data-step="3" hidden>
+        <p class="add-done-icon" aria-hidden="true">🏠</p>
+        <h3>Díky, šumperák je na cestě!</h3>
+        <p>Záznam čeká na kontrolu moderátorem. Na mapě ho zatím vidíš zeleně jen ty.</p>
+        <button type="button" class="btn btn-primary btn-lg btn-block" id="add-another">
+          + Přidat další v okolí
+        </button>
+        <button type="button" class="btn btn-block" id="add-finish">
+          Hotovo, zpět na mapu
+        </button>
+      </section>
+    </div>
+  </div>
+);
 
 // ---------- Detail domu ----------
 
@@ -138,7 +300,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
       image={after ? photoUrl(after.r2_key) : undefined}
       map
       turnstile
-      scripts={['/js/house.js']}
+      scripts={['/js/house.js', '/js/campicker.js']}
     >
       <article class="page house" data-lat={house.lat} data-lng={house.lng} data-state={house.state}>
         <p class="crumbs">
@@ -176,7 +338,7 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
                   {photos.map((p) => (
                     <figure>
                       <a href={photoUrl(p.r2_key)} target="_blank">
-                        <img src={photoUrl(p.r2_key)} alt={p.caption ?? PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} loading="lazy" />
+                        <img class="zoomable" src={photoUrl(p.r2_key)} alt={p.caption ?? PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} loading="lazy" />
                       </a>
                       <figcaption>
                         {PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]}
@@ -319,17 +481,10 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
 
 // Rohové domy bývají v panoramatu vidět z boční ulice. Tady jde zvolit místo, odkud se dívat (viz house.js).
 const CameraFix = ({ house, siteKey }: { house: House; siteKey: string }) => (
-  <details class="panel cam-fix" data-cam={house.cam_lat != null ? `${house.cam_lng},${house.cam_lat}` : ''}>
-    <summary>Dům je na snímku vidět z boku nebo z jiné ulice? Oprav pohled</summary>
-    <p class="muted small">Klikni v mapě na ulici před průčelím domu. Náhled se hned změní.</p>
-    <div class="cam-fix-map"></div>
-    <div class="sv-frame cam-fix-preview pano-missing">
-      <img alt="Náhled nového pohledu" />
-      <div class="sv-placeholder">Na tomhle místě panorama není. Klikni přímo na silnici.</div>
-    </div>
+  <details class="panel cam-fix">
+    <summary>Dům je na snímku malý, z boku nebo z jiné ulice? Oprav pohled</summary>
     <form class="ajax" action={`/api/houses/${house.id}/camera`} method="post">
-      <input type="hidden" name="cam_lat" />
-      <input type="hidden" name="cam_lng" />
+      <CameraPicker h={house} />
       <Turnstile siteKey={siteKey} />
       <button class="btn btn-primary" type="submit" disabled>
         Navrhnout tenhle pohled
@@ -420,78 +575,6 @@ const changedFields = (json: string) => {
   }
 };
 
-const HouseFields = ({ house, mods, withState = true }: { house?: Partial<House>; mods?: string[]; withState?: boolean }) => (
-  <>
-    {withState && (
-      <label>
-        Stav domu
-        <select name="state" required>
-          <option value="">Vyber…</option>
-          {Object.entries(STATES).map(([k, s]) => (
-            <option value={k} selected={house?.state === k}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-    )}
-    {withState && (
-      <label>
-        Návrh
-        <select name="design">
-          {Object.entries(DESIGNS).map(([k, l]) => (
-            <option value={k} selected={(house?.design ?? 'original') === k}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
-    )}
-    <fieldset class="mods">
-      <legend>Typ úprav (lze vybrat více)</legend>
-      {Object.entries(MODIFICATIONS).map(([k, l]) => (
-        <label class="check">
-          <input type="checkbox" name="modifications[]" value={k} checked={mods?.includes(k)} /> {l}
-        </label>
-      ))}
-    </fieldset>
-    <div class="row">
-      <label>
-        Rok stavby
-        <input name="year_built" type="number" min={1950} max={2030} value={house?.year_built ?? ''} />
-      </label>
-      <label>
-        Rok rekonstrukce
-        <input name="year_renovated" type="number" min={1960} max={2030} value={house?.year_renovated ?? ''} />
-      </label>
-    </div>
-    <div class="row">
-      <label>
-        Střešní krytina
-        <select name="roof">
-          <option value="">Nevím</option>
-          {Object.entries(ROOFS).map(([k, l]) => (
-            <option value={k} selected={house?.roof === k}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
-    {withState && <FacadeSwatches selected={house?.facade_color} />}
-    <label>
-      Poznámka
-      <textarea name="note" rows={3} maxlength={2000}>
-        {house?.note ?? ''}
-      </textarea>
-    </label>
-    <label>
-      Odkaz (článek, inzerát, blog o rekonstrukci)
-      <input name="link" type="url" maxlength={1000} value={house?.link ?? ''} />
-    </label>
-  </>
-);
-
 const EditForm = ({ house, mods, siteKey }: { house: House; mods: string[]; siteKey: string }) => (
   <form class="ajax" action={`/api/houses/${house.id}/edit`} method="post">
     <input type="hidden" name="lat" value={String(house.lat)} />
@@ -500,6 +583,7 @@ const EditForm = ({ house, mods, siteKey }: { house: House; mods: string[]; site
     <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
     <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
     <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
+    <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
     <div class="row">
       <label>
         Ulice
@@ -532,132 +616,7 @@ const EditForm = ({ house, mods, siteKey }: { house: House; mods: string[]; site
 
 // ---------- Přidání domu ----------
 
-const QUICK_STATES = ['original', 'partial', 'in_progress', 'renovated', 'unknown'] as const;
-
-pages.get('/pridat', (c) =>
-  c.html(
-    <Layout env={c.env} path="/pridat" title="Přidat šumperák" map turnstile scripts={['/js/add.js']}>
-      <div class="page add">
-        <h1>Přidat šumperák</h1>
-        <p class="lead">Klikni do mapy na dům, nebo napiš adresu. Víc není potřeba.</p>
-        <p class="map-legend muted small">
-          <span class="dot" style="--c:#1f3a5f"></span> už na mapě <span class="dot" style="--c:#2f9e5b"></span> právě
-          přidáno, čeká na schválení
-        </p>
-        <form id="add-form" class="ajax" action="/api/houses" method="post" enctype="multipart/form-data" data-validate="validateAdd">
-          <div class="geosearch">
-            <input type="search" id="address-search" placeholder="Adresa, např. Lidická 12, Šumperk" autocomplete="off" />
-            <ul id="address-results" class="suggestions" hidden></ul>
-          </div>
-          <div id="add-map" class="add-map"></div>
-          <Turnstile siteKey={c.env.TURNSTILE_SITE_KEY} />
-
-          <input type="hidden" name="lat" />
-          <input type="hidden" name="lng" />
-          <input type="hidden" name="country" />
-          <input type="hidden" name="district" />
-          <input type="hidden" name="region" />
-          <input type="hidden" name="cam_lat" />
-          <input type="hidden" name="cam_lng" />
-
-          <section id="picked" class="picked" hidden>
-            <div class="picked-media">
-              <div class="sv-frame picked-pano">
-                <img id="picked-pano" alt="Pohled z ulice" hidden />
-                <div class="sv-placeholder" id="pano-missing-text">
-                  U tohoto místa panorama z ulice není.
-                </div>
-              </div>
-              <div class="cam-tools">
-                <button type="button" class="btn btn-sm" id="cam-pick">
-                  🔄 Dům je vidět z boku? Vyber ulici před průčelím
-                </button>
-                <button type="button" class="btn btn-sm" id="cam-reset" hidden>
-                  Zpět na automatický pohled
-                </button>
-                <p class="cam-hint small" id="cam-hint" hidden>
-                  👆 Klikni v mapě na ulici, ze které je vidět průčelí domu (nejvýš 150 m od domu).
-                </p>
-              </div>
-            </div>
-            <div class="picked-body">
-              <h2 id="picked-address">Vybraný dům</h2>
-              <p class="muted">Není to ono? Klikni v mapě vedle, nebo přetáhni špendlík.</p>
-              <div id="duplicates" class="alert" hidden></div>
-
-              <fieldset class="chips">
-                <legend>Jak dům vypadá teď?</legend>
-                {QUICK_STATES.map((k) => (
-                  <label>
-                    <input type="radio" name="state" value={k} checked={k === 'unknown'} />
-                    <span>{k === 'unknown' ? 'Nevím' : STATES[k].label}</span>
-                  </label>
-                ))}
-              </fieldset>
-
-              <fieldset class="chips">
-                <legend>Návrh</legend>
-                {Object.entries(DESIGNS).map(([k, l]) => (
-                  <label>
-                    <input type="radio" name="design" value={k} checked={k === 'original'} />
-                    <span>{l}</span>
-                  </label>
-                ))}
-              </fieldset>
-
-              <FacadeSwatches picker />
-
-              <button class="btn btn-primary btn-lg btn-block" type="submit">
-                Přidat šumperák
-              </button>
-              <p class="form-msg" role="status"></p>
-              <p class="muted small">
-                Odesláním souhlasíš se zveřejněním údajů pod licencí CC BY-SA 4.0 a se{' '}
-                <a href="/soukromi">zásadami ochrany soukromí</a>. Dům se na mapě objeví po kontrole.
-              </p>
-
-              <details class="panel">
-                <summary>Opravit adresu</summary>
-                <div class="row">
-                  <label>
-                    Ulice
-                    <input name="street" maxlength={120} />
-                  </label>
-                  <label>
-                    Číslo
-                    <input name="house_number" maxlength={20} />
-                  </label>
-                </div>
-                <label>
-                  Obec
-                  <input name="municipality" maxlength={120} />
-                </label>
-                <label class="check">
-                  <input type="checkbox" name="hide_number" value="1" /> Nezobrazovat veřejně číslo domu
-                </label>
-              </details>
-
-              <details class="panel">
-                <summary>Doplnit podrobnosti a vlastní fotky (nepovinné)</summary>
-                <HouseFields withState={false} />
-                <h3>Vlastní fotky</h3>
-                <p class="muted">
-                  Hodí se hlavně fotky před a po rekonstrukci. Před nahráním se zmenší a odstraní se z nich GPS. Foť jen
-                  z ulice a bez lidí a SPZ.
-                </p>
-                <div class="photo-slots" data-slots="6"></div>
-                <label>
-                  Autor fotek
-                  <input name="author" maxlength={80} />
-                </label>
-              </details>
-            </div>
-          </section>
-        </form>
-      </div>
-    </Layout>,
-  ),
-);
+pages.get('/pridat', (c) => c.redirect('/?pridat=1'));
 
 pages.get('/dekujeme', (c) =>
   c.html(
@@ -683,15 +642,17 @@ pages.get('/dekujeme', (c) =>
 pages.get('/obce', async (c) => {
   const { results } = await c.env.DB.prepare(
     `SELECT municipality_slug AS slug, min(municipality) AS name, coalesce(min(region), 'Neznámý kraj') AS region,
-            country, count(*) AS n
+            min(region) AS raw_region, country, count(*) AS n
        FROM houses WHERE status = 'approved'
       GROUP BY municipality_slug, country ORDER BY country, region, name`,
-  ).all<{ slug: string; name: string; region: string; country: string; n: number }>();
+  ).all<{ slug: string; name: string; region: string; raw_region: string | null; country: string; n: number }>();
 
-  const groups = new Map<string, typeof results>();
+  const groups = new Map<string, { country: string; region: string; raw: string | null; rows: typeof results }>();
   for (const r of results) {
-    const key = `${r.country === 'sk' ? 'Slovensko' : 'Česko'}: ${r.region}`;
-    groups.set(key, [...(groups.get(key) ?? []), r]);
+    const key = `${r.country}|${r.region}`;
+    const g = groups.get(key) ?? { country: r.country === 'sk' ? 'Slovensko' : 'Česko', region: r.region, raw: r.raw_region, rows: [] };
+    g.rows.push(r);
+    groups.set(key, g);
   }
 
   return c.html(
@@ -700,11 +661,17 @@ pages.get('/obce', async (c) => {
         <h1>Šumperáky podle obcí</h1>
         {results.length === 0 && <p>Zatím tu nic není. <a href="/pridat">Přidej první šumperák!</a></p>}
         <div class="columns">
-          {[...groups].map(([region, rows]) => (
+          {[...groups.values()].map((g) => (
             <section>
-              <h2>{region}</h2>
+              <h2>
+                {g.country}:{' '}
+                <a href={`/domy?${new URLSearchParams({ kraj: g.raw ?? NO_REGION })}`} title="Všechny šumperáky v kraji">
+                  {g.region}
+                </a>{' '}
+                <span class="muted small">({g.rows.reduce((sum, r) => sum + r.n, 0)})</span>
+              </h2>
               <ul class="plain">
-                {rows.map((r) => (
+                {g.rows.map((r) => (
                   <li>
                     <a href={`/obec/${r.slug}`}>{r.name}</a> <span class="muted">({r.n})</span>
                   </li>
@@ -718,7 +685,7 @@ pages.get('/obce', async (c) => {
   );
 });
 
-const cardsQuery = `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+const cardsQuery = `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
       (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
          ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
    FROM houses h`;
@@ -863,7 +830,7 @@ pages.get('/domy', async (c) => {
 
   const [list, total] = await c.env.DB.batch<Record<string, unknown>>([
     c.env.DB.prepare(
-      `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+      `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
          FROM (${base}) h ORDER BY h.municipality, h.street, h.house_number LIMIT ? OFFSET ?`,

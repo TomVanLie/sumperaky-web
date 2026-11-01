@@ -53,7 +53,17 @@ Panoramata pokrývají jen Česko. U ostatních domů zůstávají odkazy na Map
 
 Rohové domy bývají z nejbližšího panoramatu vidět z boční ulice. Proto jde u domu uložit místo pohledu (`cam_lat`, `cam_lng`, nejvýš 150 m od domu): panorama se pak hledá do 25 m od tohoto místa a natočí se na dům (`yaw` v radiánech). Místo pohledu jde zvolit při přidání domu a u existujícího domu ho navrhnout v detailu (schvaluje moderátor, v moderaci je náhled před a po).
 
+Přiblížení (`pano_fov`, zorný úhel v radiánech, výchozí 1) pomáhá u domů daleko od ulice. Volí se při přidání, v návrhu opravy pohledu i v moderaci. Kliknutím na pohled z ulice se otevře zvětšený náhled, ve kterém jde dál přibližovat (každý krok je nový snímek, 4 kredity).
+
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.
+
+## Mapa a přidávání
+
+Hlavní stránka má vlevo filtry, uprostřed mapu a pod ní detail vybraného domu, vpravo seznam domů ve výřezu mapy (po 10, kvůli kreditům Mapy.com). Klik na shluk mapu přiblíží a vypíše jen jeho domy, další pohyb mapou výběr zruší. Dům se přidává průvodcem přímo v mapě, bez přenačtení stránky (`/pridat` přesměruje na `/?pridat=1`).
+
+## Moderace
+
+`/admin` schvaluje nové domy po jednom, fotky, návrhy úprav, nahlášení a komentáře. `/admin/domy` najde libovolný dům a `/admin/dum/:id` ho upraví včetně místa pohledu, přiblížení, kraje a stavu záznamu (změna se uloží do historie).
 
 ## Hlasování a komentáře
 

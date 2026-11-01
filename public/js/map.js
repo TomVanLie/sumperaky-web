@@ -1,3 +1,4 @@
+import { createAddWizard } from './addwizard.js';
 import { SUMP, createMap, getJson, mapyPano, maplibregl, stateColorExpr } from './common.js';
 
 const map = createMap('map', { hash: true });
@@ -7,14 +8,20 @@ map.addControl(new maplibregl.GeolocateControl({ fitBoundsOptions: { maxZoom: 14
 const form = document.getElementById('filters');
 const counter = document.getElementById('result-count');
 const layout = document.querySelector('.map-layout');
-const panel = document.getElementById('results');
-const panelTitle = document.getElementById('results-title');
-const panelList = document.getElementById('results-list');
+const browse = document.getElementById('browse');
+const listTitle = document.getElementById('results-title');
+const list = document.getElementById('results-list');
+const more = document.getElementById('results-more');
+const clusterClear = document.getElementById('cluster-clear');
+const sheet = document.getElementById('house-sheet');
 let all = { type: 'FeatureCollection', features: [] };
 
-const NEARBY_MAX = 20;
-const NEARBY_KM = 20;
-const CLUSTER_MAX = 100;
+// Náhledy z Mapy.com stojí kredity, proto se v seznamu načítá po 10 domech.
+const PAGE = 10;
+let limit = PAGE;
+// Domy z kliknutého shluku. Platí, dokud uživatel mapou sám nepohne.
+let clusterIds = null;
+let selectedId = null;
 
 const filtered = () => {
   const states = new Set(new FormData(form).getAll('state'));
@@ -22,25 +29,16 @@ const filtered = () => {
   const color = form.color.value;
   const design = form.design.value;
   const photoOnly = form.photo.checked;
-  return {
-    type: 'FeatureCollection',
-    features: all.features.filter((f) => {
-      const p = f.properties;
-      return (
-        states.has(p.s) &&
-        (!mod || p.m.split(',').includes(mod)) &&
-        (!color || p.c === color) &&
-        (!design || p.d === design) &&
-        (!photoOnly || p.p)
-      );
-    }),
-  };
-};
-
-const refresh = () => {
-  const data = filtered();
-  map.getSource('houses')?.setData(data);
-  counter.textContent = `Zobrazeno ${data.features.length} z ${all.features.length} domů`;
+  return all.features.filter((f) => {
+    const p = f.properties;
+    return (
+      states.has(p.s) &&
+      (!mod || p.m.split(',').includes(mod)) &&
+      (!color || p.c === color) &&
+      (!design || p.d === design) &&
+      (!photoOnly || p.p)
+    );
+  });
 };
 
 // ---------- Pomocníci pro DOM (texty od uživatelů jen přes textContent) ----------
@@ -58,27 +56,26 @@ const el = (tag, attrs = {}, ...children) => {
 
 const houses = (n) => `${n} ${n === 1 ? 'dům' : n >= 2 && n <= 4 ? 'domy' : 'domů'}`;
 
-const km = (a, b) => {
-  const [lng1, lat1] = a;
-  const [lng2, lat2] = b;
-  const x = (lng2 - lng1) * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180));
-  return Math.hypot(x, lat2 - lat1) * 111.32;
-};
-const formatKm = (d) => (d < 1 ? `${Math.max(10, Math.round((d * 1000) / 10) * 10)} m` : `${d.toFixed(1).replace('.', ',')} km`);
+const km = ([lng1, lat1], [lng2, lat2]) =>
+  Math.hypot((lng2 - lng1) * Math.cos(((lat1 + lat2) / 2) * (Math.PI / 180)), lat2 - lat1) * 111.32;
 
-// Náhled: vlastní fotka, jinak panorama z Mapy.com (jen Česko). Když se nenačte, zůstane zástupný text.
-const thumb = (f, width, height) => {
+const panoSrc = (f, width, height) => {
   const p = f.properties;
   const [lng, lat] = f.geometry.coordinates;
-  const src = p.p ? `/foto/${p.p}` : p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height, p.cam || null) : null;
+  return p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height, p.cam || null, p.z || null) : null;
+};
+
+// Náhled: vlastní fotka, jinak panorama z Mapy.com (jen Česko). Když se nenačte, zůstane zástupný text.
+const thumb = (src, { zoomable = false } = {}) => {
   const box = el('div', { class: 'thumb' }, el('span', { class: 'thumb-empty' }, 'Bez náhledu'));
   if (src) {
-    const img = el('img', { src, alt: '', loading: 'lazy' });
+    const img = el('img', { src, alt: '', loading: 'lazy', class: zoomable ? 'zoomable' : null });
     img.addEventListener('error', () => img.remove());
     box.append(img);
   }
   return box;
 };
+const previewSrc = (f, w, h) => (f.properties.p ? `/foto/${f.properties.p}` : panoSrc(f, w, h));
 
 const badge = (state) => {
   const s = SUMP.states[state];
@@ -101,12 +98,13 @@ const votes = (p) =>
       )
     : null;
 
-// ---------- Bublina ----------
+const highlight = (f) => map.getSource('selected')?.setData({ type: 'FeatureCollection', features: f ? [f] : [] });
 
-let popup = null;
+// ---------- Detail vybraného domu (pod mapou) ----------
 
-const popupContent = (f) => {
+const openSheet = (f) => {
   const p = f.properties;
+  selectedId = p.id;
   const mods = p.m ? p.m.split(',').map((m) => SUMP.modifications[m]).filter(Boolean) : [];
   const facts = [
     ['Návrh', SUMP.designs[p.d]],
@@ -115,107 +113,151 @@ const popupContent = (f) => {
     ['Rekonstrukce', p.yr || null],
     ['Úpravy', mods.length ? mods.join(', ') : null],
   ].filter(([, v]) => v);
-  return el(
-    'div',
-    { class: 'popup' },
-    el('a', { href: `/dum/${p.id}`, class: 'popup-img' }, thumb(f, 600, 380)),
-    el('a', { href: `/dum/${p.id}`, class: 'popup-title' }, p.a),
-    badge(p.s),
-    el('dl', { class: 'popup-facts' }, facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])),
-    votes(p),
-    el('a', { href: `/dum/${p.id}`, class: 'popup-more' }, 'Detail domu, fotky a komentáře ›'),
+
+  const pano = panoSrc(f, 1024, 640);
+  const photo = p.p ? `/foto/${p.p}` : null;
+  const main = thumb(photo ?? pano, { zoomable: true });
+  // Vlastní fotka i pohled z ulice: druhý obrázek jde přepnout.
+  const alt = photo && pano ? el('button', { type: 'button', class: 'sheet-alt' }, thumb(pano), el('span', {}, 'Pohled z ulice')) : null;
+  alt?.addEventListener('click', () => {
+    const img = main.querySelector('img');
+    const other = alt.querySelector('img');
+    if (img && other) [img.src, other.src] = [other.src, img.src];
+    alt.lastChild.textContent = alt.lastChild.textContent === 'Pohled z ulice' ? 'Fotka' : 'Pohled z ulice';
+  });
+
+  const close = el('button', { type: 'button', class: 'btn btn-sm sheet-close', 'aria-label': 'Zavřít detail' }, '✕');
+  close.addEventListener('click', closeSheet);
+
+  sheet.replaceChildren(
+    el('div', { class: 'sheet-media' }, main, alt, el('span', { class: 'muted small' }, 'Klikni na obrázek pro zvětšení')),
+    el(
+      'div',
+      { class: 'sheet-body' },
+      close,
+      el('h2', {}, el('a', { href: `/dum/${p.id}` }, p.a)),
+      el('p', { class: 'sheet-meta' }, badge(p.s), p.r ? el('span', { class: 'muted' }, p.r) : null),
+      el('dl', { class: 'popup-facts' }, facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])),
+      votes(p),
+      el(
+        'p',
+        { class: 'sheet-actions' },
+        el('a', { class: 'btn btn-primary', href: `/dum/${p.id}` }, 'Detail, fotky a komentáře ›'),
+        el('a', { class: 'btn', href: `/dum/${p.id}#hlasovani` }, 'Je to šumperák?'),
+      ),
+    ),
   );
-};
-
-// Bublina je vysoká, proto se otevírá nad bodem a mapa bod posune do spodní části.
-const popupOffset = () => [0, Math.min(220, map.getContainer().clientHeight * 0.3)];
-
-const openPopup = (f) => {
-  popup?.remove();
-  popup = new maplibregl.Popup({ anchor: 'bottom', offset: 12, maxWidth: '300px', focusAfterOpen: false })
-    .setLngLat(f.geometry.coordinates)
-    .setDOMContent(popupContent(f))
-    .addTo(map);
-  highlight(f);
-};
-
-// ---------- Zvýraznění vybraného domu ----------
-
-const highlight = (f) => {
-  map.getSource('selected')?.setData({ type: 'FeatureCollection', features: f ? [f] : [] });
-};
-
-// ---------- Panel s výpisem ----------
-
-const openPanel = (title, features, selectedId, origin) => {
-  panelTitle.textContent = title;
-  panelList.replaceChildren(
-    ...features.map((f) => {
-      const p = f.properties;
-      const distance = origin && p.id !== selectedId ? formatKm(km(origin, f.geometry.coordinates)) : null;
-      const item = el(
-        'li',
-        { class: p.id === selectedId ? 'selected' : null },
-        el(
-          'button',
-          { type: 'button', class: 'result' },
-          thumb(f, 400, 260),
-          el(
-            'span',
-            { class: 'result-body' },
-            el('strong', {}, p.a),
-            el('span', { class: 'result-meta' }, badge(p.s), distance && el('span', { class: 'muted' }, distance)),
-            el('span', { class: 'result-meta muted' }, SUMP.designs[p.d]),
-            p.c && el('span', { class: 'result-meta muted' }, swatch(p.c)),
-            votes(p),
-          ),
-        ),
-      );
-      const button = item.querySelector('button');
-      button.addEventListener('click', () => {
-        for (const li of panelList.children) li.classList.toggle('selected', li === item);
-        map.flyTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 17), offset: popupOffset() });
-        openPopup(f);
-      });
-      button.addEventListener('mouseenter', () => highlight(f));
-      return item;
-    }),
-  );
-  panelList.scrollTop = 0;
-  if (panel.hidden) {
-    panel.hidden = false;
-    layout.classList.add('with-results');
+  if (sheet.hidden) {
+    sheet.hidden = false;
     map.resize();
   }
+  highlight(f);
+  for (const li of list.children) li.classList.toggle('selected', Number(li.dataset.id) === p.id);
+  // Dům musí zůstat vidět i nad zmenšenou mapou.
+  if (!map.getBounds().contains(f.geometry.coordinates)) map.easeTo({ center: f.geometry.coordinates }, { keepList: true });
 };
 
-const closePanel = () => {
-  panel.hidden = true;
-  layout.classList.remove('with-results');
+const closeSheet = () => {
+  selectedId = null;
+  sheet.hidden = true;
+  sheet.replaceChildren();
+  highlight(null);
+  for (const li of list.children) li.classList.remove('selected');
   map.resize();
 };
-document.getElementById('results-close').addEventListener('click', closePanel);
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !document.querySelector('dialog[open]') && closeSheet());
 
-// Vybraný dům a nejbližší další domy (podle aktuálních filtrů).
-const showNearby = (f) => {
-  const origin = f.geometry.coordinates;
-  const others = filtered()
-    .features.filter((o) => o.properties.id !== f.properties.id)
-    .map((o) => ({ o, d: km(origin, o.geometry.coordinates) }))
-    .filter((x) => x.d <= NEARBY_KM)
-    .sort((a, b) => a.d - b.d)
-    .slice(0, NEARBY_MAX)
-    .map((x) => x.o);
-  const title = others.length ? `Vybraný dům a ${houses(others.length)} v okolí` : 'Vybraný dům';
-  openPanel(title, [f, ...others], f.properties.id, origin);
+// ---------- Seznam vpravo: domy ve výřezu mapy, nebo ve vybraném shluku ----------
+
+const listItem = (f, center) => {
+  const p = f.properties;
+  const item = el(
+    'li',
+    { 'data-id': p.id, class: p.id === selectedId ? 'selected' : null },
+    el(
+      'button',
+      { type: 'button', class: 'result' },
+      thumb(previewSrc(f, 400, 260)),
+      el(
+        'span',
+        { class: 'result-body' },
+        el('strong', {}, p.a),
+        el('span', { class: 'result-meta' }, badge(p.s), center && el('span', { class: 'muted' }, formatKm(km(center, f.geometry.coordinates)))),
+        el('span', { class: 'result-meta muted' }, SUMP.designs[p.d]),
+        p.c && el('span', { class: 'result-meta muted' }, swatch(p.c)),
+        votes(p),
+      ),
+    ),
+  );
+  const button = item.querySelector('button');
+  button.addEventListener('click', () => {
+    openSheet(f);
+    map.easeTo({ center: f.geometry.coordinates, zoom: Math.max(map.getZoom(), 16) }, { keepList: true });
+  });
+  button.addEventListener('mouseenter', () => selectedId === null && highlight(f));
+  button.addEventListener('mouseleave', () => selectedId === null && highlight(null));
+  return item;
 };
+
+const formatKm = (d) => (d < 1 ? `${Math.max(10, Math.round((d * 1000) / 10) * 10)} m` : `${d.toFixed(1).replace('.', ',')} km`);
+
+const renderList = () => {
+  const data = filtered();
+  const bounds = map.getBounds();
+  const center = map.getCenter().toArray();
+  const inView = clusterIds ? data.filter((f) => clusterIds.has(f.properties.id)) : data.filter((f) => bounds.contains(f.geometry.coordinates));
+  inView.sort((a, b) => km(center, a.geometry.coordinates) - km(center, b.geometry.coordinates));
+
+  listTitle.textContent = clusterIds
+    ? `${houses(inView.length)} ve shluku`
+    : inView.length
+      ? `${houses(inView.length)} ve výřezu mapy`
+      : 'Ve výřezu mapy nic není';
+  clusterClear.hidden = !clusterIds;
+  const shown = inView.slice(0, limit);
+  // Vzdálenost od středu mapy má smysl až při přiblížení.
+  const showDistance = map.getZoom() >= 11;
+  list.replaceChildren(...shown.map((f) => listItem(f, showDistance ? center : null)));
+  if (!inView.length) list.append(el('li', { class: 'muted results-empty' }, 'Oddal mapu nebo uprav filtry.'));
+  more.hidden = inView.length <= limit;
+  more.textContent = `Načíst dalších ${Math.min(PAGE, inView.length - limit)} (zbývá ${inView.length - limit})`;
+};
+
+more.addEventListener('click', () => {
+  const scroll = list.scrollTop;
+  limit += PAGE;
+  renderList();
+  list.scrollTop = scroll;
+});
+
+clusterClear.addEventListener('click', () => {
+  clusterIds = null;
+  limit = PAGE;
+  renderList();
+});
+
+const refresh = () => {
+  const data = filtered();
+  map.getSource('houses')?.setData({ type: 'FeatureCollection', features: data });
+  counter.textContent = `Zobrazeno ${data.length} z ${all.features.length} domů`;
+  limit = PAGE;
+  renderList();
+};
+
+// Pohyb mapy uživatelem zruší výběr shluku a seznam se přepočítá podle výřezu.
+map.on('moveend', (e) => {
+  if (e.keepList) return;
+  if (!e.fromCluster) clusterIds = null;
+  limit = PAGE;
+  renderList();
+});
 
 // ---------- Mapa ----------
 
 map.on('load', async () => {
   all = await getJson('/api/houses.geojson');
 
-  map.addSource('houses', { type: 'geojson', data: filtered(), cluster: true, clusterRadius: 40, clusterMaxZoom: 15 });
+  map.addSource('houses', { type: 'geojson', data: { type: 'FeatureCollection', features: filtered() }, cluster: true, clusterRadius: 40, clusterMaxZoom: 15 });
   map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
 
   map.addLayer({
@@ -266,32 +308,36 @@ map.on('load', async () => {
 
   refresh();
 
-  // Shluk: přiblížit a vypsat jeho domy do panelu.
+  // Shluk: přiblížit na jeho domy a vypsat je vpravo.
   map.on('click', 'clusters', async (e) => {
-    const f = e.features[0];
-    const source = map.getSource('houses');
-    const { cluster_id: id, point_count: count } = f.properties;
-    const [zoom, leaves] = await Promise.all([source.getClusterExpansionZoom(id), source.getClusterLeaves(id, CLUSTER_MAX, 0)]);
-    map.easeTo({ center: f.geometry.coordinates, zoom });
-    popup?.remove();
-    highlight(null);
-    leaves.sort((a, b) => a.properties.a.localeCompare(b.properties.a, 'cs'));
-    const title = count > CLUSTER_MAX ? `${houses(count)} ve shluku, prvních ${CLUSTER_MAX}` : `${houses(count)} ve shluku`;
-    openPanel(title, leaves, null, null);
+    if (wizard.isActive()) return;
+    const { cluster_id: id, point_count: count } = e.features[0].properties;
+    const leaves = await map.getSource('houses').getClusterLeaves(id, count, 0);
+    clusterIds = new Set(leaves.map((f) => f.properties.id));
+    const bounds = new maplibregl.LngLatBounds();
+    for (const f of leaves) bounds.extend(f.geometry.coordinates);
+    map.fitBounds(bounds, { padding: 60, maxZoom: 17 }, { fromCluster: true });
   });
 
-  // Dům: bublina s náhledem a panel s domy v okolí.
+  // Dům: detail mezi mapou a seznamem.
   map.on('click', 'points', (e) => {
-    const f = all.features.find((x) => x.properties.id === e.features[0].properties.id) ?? e.features[0];
-    map.easeTo({ center: f.geometry.coordinates, offset: popupOffset() });
-    openPopup(f);
-    showNearby(f);
+    if (wizard.isActive()) return;
+    const f = all.features.find((x) => x.properties.id === e.features[0].properties.id);
+    if (f) openSheet(f);
   });
 
-  for (const layer of ['clusters', 'points']) {
-    map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
-    map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
-  }
+  // Při najetí myší krátký popisek s adresou.
+  const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'hover-label' });
+  map.on('mouseenter', 'points', (e) => {
+    map.getCanvas().style.cursor = wizard.isActive() ? 'crosshair' : 'pointer';
+    if (!wizard.isActive()) hover.setLngLat(e.features[0].geometry.coordinates).setText(e.features[0].properties.a).addTo(map);
+  });
+  map.on('mouseleave', 'points', () => {
+    map.getCanvas().style.cursor = wizard.isActive() ? 'crosshair' : '';
+    hover.remove();
+  });
+  map.on('mouseenter', 'clusters', () => !wizard.isActive() && (map.getCanvas().style.cursor = 'pointer'));
+  map.on('mouseleave', 'clusters', () => (map.getCanvas().style.cursor = wizard.isActive() ? 'crosshair' : ''));
 });
 
 form.addEventListener('change', refresh);
@@ -305,3 +351,31 @@ form.addEventListener('submit', async (e) => {
   if (results[0]) map.flyTo({ center: [results[0].lng, results[0].lat], zoom: results[0].street ? 16 : 13 });
   else counter.textContent = 'Místo nenalezeno.';
 });
+
+// ---------- Přidání domu v mapě ----------
+
+const wizard = createAddWizard({
+  map,
+  onOpen: () => {
+    closeSheet();
+    browse.hidden = true;
+    layout.classList.add('adding');
+  },
+  onClose: () => {
+    browse.hidden = false;
+    layout.classList.remove('adding');
+    renderList();
+  },
+});
+
+// Tlačítka "Přidat šumperák" (v panelu i v hlavičce) otevřou průvodce bez načtení stránky.
+for (const a of document.querySelectorAll('a[href="/pridat"]')) {
+  a.addEventListener('click', (e) => {
+    e.preventDefault();
+    wizard.start();
+  });
+}
+if (new URLSearchParams(location.search).has('pridat')) {
+  history.replaceState(null, '', location.pathname + location.hash);
+  wizard.start();
+}

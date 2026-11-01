@@ -3,11 +3,12 @@ import { csrf } from 'hono/csrf';
 import { DESIGNS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
 import type { AppEnv } from '../env';
 import { addRevision, addressLine, getModifications, housesNear, modificationStatements, type House, type Photo } from '../db';
-import { EDITABLE_FIELDS, FIELD_LABELS } from '../input';
+import { EDITABLE_FIELDS, FIELD_LABELS, diffHouse, parseHouseInput } from '../input';
 import { requireAccess } from '../lib/access';
 import { mapyLink, streetViewLink } from '../lib/streetview';
-import { distance, formatDate, slugify } from '../lib/util';
-import { FacadeSwatch, ModList, StateBadge, panoUrl } from '../views/components';
+import { distance, formatDate, slugify, str } from '../lib/util';
+import { CameraPicker, FacadeSwatch, ModList, StateBadge, panoUrl } from '../views/components';
+import { HouseFields } from '../views/houseForm';
 import { Layout } from '../views/layout';
 import { servePhoto } from './files';
 
@@ -48,7 +49,7 @@ admin.get('/', async (c) => {
          FROM photos p JOIN houses h ON h.id = p.house_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 100`,
     ),
     db.prepare(
-      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number, h.lat, h.lng, h.country, h.cam_lat, h.cam_lng
+      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number, h.lat, h.lng, h.country, h.cam_lat, h.cam_lng, h.pano_fov
          FROM edit_suggestions e JOIN houses h ON h.id = e.house_id WHERE e.status = 'pending' ORDER BY e.id LIMIT 50`,
     ),
     db.prepare(
@@ -118,6 +119,7 @@ admin.get('/', async (c) => {
           <a href="#upravy">Návrhy úprav ({editRows.length})</a>
           <a href="#nahlaseni">Nahlášení ({reportRows.length})</a>
           <a href="#komentare">Komentáře ({pendingComments})</a>
+          <a href="/admin/domy">Všechny domy (upravit)</a>
         </nav>
 
         <section id="domy">
@@ -137,7 +139,7 @@ admin.get('/', async (c) => {
               <div class="review-media">
                 {currentPano ? (
                   <div class="sv-frame">
-                    <img src={currentPano} alt="Pohled z ulice" onerror="this.parentElement.classList.add('pano-missing')" />
+                    <img class="zoomable" src={currentPano} alt="Pohled z ulice" onerror="this.parentElement.classList.add('pano-missing')" />
                     <div class="sv-placeholder">Panorama tu není</div>
                   </div>
                 ) : (
@@ -148,7 +150,7 @@ admin.get('/', async (c) => {
                     {(photosByHouse.get(current.id) ?? []).map((p) => (
                       <figure>
                         <a href={adminPhoto(p.r2_key)} target="_blank">
-                          <img src={adminPhoto(p.r2_key)} alt="" />
+                          <img class="zoomable" src={adminPhoto(p.r2_key)} alt="" />
                         </a>
                         <figcaption>
                           {PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} {p.year_taken ?? ''}
@@ -213,6 +215,11 @@ admin.get('/', async (c) => {
                     Přeskočit (→)
                   </a>
                 </div>
+                <p>
+                  <a class="btn" href={`/admin/dum/${current.id}?zpet=${encodeURIComponent(`/admin?po=${skip}#domy`)}`}>
+                    ✎ Upravit údaje, pohled a přiblížení
+                  </a>
+                </p>
                 <p class="muted small">
                   <a href={mapyLink(current)} target="_blank" rel="noopener">Procházet panorama na Mapy.cz</a> ·{' '}
                   <a href={streetViewLink(current)} target="_blank" rel="noopener">Google Street View</a>
@@ -228,7 +235,7 @@ admin.get('/', async (c) => {
           <div class="mod-photos">
             {loosePhotos.map((p) => (
               <figure>
-                <a href={adminPhoto(p.r2_key)} target="_blank"><img src={adminPhoto(p.r2_key)} alt="" /></a>
+                <a href={adminPhoto(p.r2_key)} target="_blank"><img class="zoomable" src={adminPhoto(p.r2_key)} alt="" /></a>
                 <figcaption>
                   <a href={`/dum/${p.house_id}`}>{addressLine(p)}</a>
                   <br />
@@ -251,6 +258,7 @@ admin.get('/', async (c) => {
                 <header>
                   <a href={`/dum/${e.house_id}`}><strong>#{e.house_id} {addressLine(e)}</strong></a>{' '}
                   <span class="muted">{formatDate(e.created_at)}</span>
+                  <a class="btn btn-sm" href={`/admin/dum/${e.house_id}?zpet=${encodeURIComponent('/admin#upravy')}`}>✎ Upravit dům</a>
                 </header>
                 <table class="diff">
                   {Object.entries(changes).map(([f, ch]) => (
@@ -262,14 +270,14 @@ admin.get('/', async (c) => {
                   ))}
                 </table>
                 {e.comment && <p class="note">{e.comment}</p>}
-                {'cam_lat' in changes && (
+                {('cam_lat' in changes || 'pano_fov' in changes) && (
                   <div class="cam-compare">
                     {[
                       ['Teď', panoUrl(c.env, e, true)],
-                      ['Navrženo', panoUrl(c.env, { ...e, cam_lat: changes.cam_lat.to as number, cam_lng: changes.cam_lng?.to as number }, true)],
+                      ['Navrženo', panoUrl(c.env, { ...e, ...Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v.to])) }, true)],
                     ].map(([label, src]) => (
                       <figure>
-                        {src && <img src={src} alt="" loading="lazy" />}
+                        {src && <img class="zoomable" src={src} alt="" loading="lazy" />}
                         <figcaption>{label}</figcaption>
                       </figure>
                     ))}
@@ -427,4 +435,223 @@ admin.post('/reports/:id/resolve', async (c) => {
     .bind(idParam(c.req.param('id')))
     .run();
   return back(c, 'nahlaseni');
+});
+
+// ---------- Úprava libovolného domu ----------
+
+const HOUSE_STATUSES = { pending: 'Čeká na schválení', approved: 'Na mapě', hidden: 'Skrytý' } as const;
+const LIST_SIZE = 50;
+
+admin.get('/domy', async (c) => {
+  const q = str(c.req.query('q'), 100);
+  const page = Math.max(1, Number.parseInt(c.req.query('strana') ?? '1', 10) || 1);
+  const id = q && /^#?\d+$/.test(q) ? Number(q.replace('#', '')) : null;
+  const like = `%${q ?? ''}%`;
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, status, state, street, house_number, hide_number, municipality, region, lat, lng, country, cam_lat, cam_lng, pano_fov
+       FROM houses
+      WHERE status != 'rejected'
+        AND (?1 IS NULL OR id = ?2 OR municipality LIKE ?3 OR street LIKE ?3 OR (street || ' ' || house_number) LIKE ?3)
+      ORDER BY id DESC LIMIT ?4 OFFSET ?5`,
+  )
+    .bind(q, id, like, LIST_SIZE + 1, (page - 1) * LIST_SIZE)
+    .all<House>();
+  const more = results.length > LIST_SIZE;
+  const params = (p: number) => `/admin/domy?${new URLSearchParams({ ...(q ? { q } : {}), strana: String(p) })}`;
+
+  return c.html(
+    <Layout env={c.env} path="/admin/domy" title="Všechny domy" scripts={['/js/admin.js']}>
+      <div class="page admin">
+        <p class="crumbs">
+          <a href="/admin">Moderace</a> › Všechny domy
+        </p>
+        <h1>Všechny domy</h1>
+        <form method="get" class="admin-search">
+          <input type="search" name="q" value={q ?? ''} placeholder="Obec, ulice nebo číslo záznamu (#12)" autofocus />
+          <button class="btn" type="submit">
+            Hledat
+          </button>
+        </form>
+        {results.length === 0 && <p class="muted">Nic nenalezeno.</p>}
+        <ul class="admin-houses">
+          {results.slice(0, LIST_SIZE).map((h) => {
+            const img = panoUrl(c.env, h, true);
+            return (
+              <li>
+                <a href={`/admin/dum/${h.id}?zpet=${encodeURIComponent(params(page))}`}>
+                  <span class="thumb">{img && <img src={img} alt="" loading="lazy" onerror="this.remove()" />}</span>
+                  <span class="result-body">
+                    <strong>
+                      #{h.id} {addressLine(h)}
+                    </strong>
+                    <span class="result-meta">
+                      <StateBadge state={h.state} />
+                      <span class="tag">{HOUSE_STATUSES[h.status as keyof typeof HOUSE_STATUSES] ?? h.status}</span>
+                      {h.region && <span class="muted small">{h.region}</span>}
+                    </span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+        <nav class="pager">
+          {page > 1 && (
+            <a class="btn" href={params(page - 1)}>
+              ‹ Předchozí
+            </a>
+          )}
+          {more && (
+            <a class="btn" href={params(page + 1)}>
+              Další ›
+            </a>
+          )}
+        </nav>
+      </div>
+    </Layout>,
+  );
+});
+
+// Kam se vrátit po uložení: jen v rámci moderace.
+const backTo = (raw: string | null, id: number) =>
+  raw && raw.startsWith('/admin') ? raw : `/admin/dum/${id}?ulozeno=1`;
+
+const houseById = (db: D1Database, raw: string) =>
+  db.prepare('SELECT * FROM houses WHERE id = ?').bind(idParam(raw)).first<House>();
+
+admin.get('/dum/:id{[0-9]+}', async (c) => {
+  const house = await houseById(c.env.DB, c.req.param('id'));
+  if (!house) return c.notFound();
+  const mods = await getModifications(c.env.DB, house.id);
+  const back = c.req.query('zpet');
+  const hasPano = !!panoUrl(c.env, house) && !!c.env.MAPY_API_KEY;
+
+  return c.html(
+    <Layout env={c.env} path={`/admin/dum/${house.id}`} title={`Upravit #${house.id}`} map scripts={['/js/admin.js', '/js/campicker.js']}>
+      <div class="page admin">
+        <p class="crumbs">
+          <a href="/admin">Moderace</a> › <a href="/admin/domy">Všechny domy</a> › #{house.id}
+        </p>
+        <h1>
+          #{house.id} {addressLine(house)}
+        </h1>
+        {c.req.query('ulozeno') && <p class="alert">Uloženo.</p>}
+        <p class="meta">
+          <StateBadge state={house.state} />{' '}
+          <span class="tag">{HOUSE_STATUSES[house.status as keyof typeof HOUSE_STATUSES] ?? house.status}</span>{' '}
+          {house.status === 'approved' && <a href={`/dum/${house.id}`}>Veřejný detail</a>}
+        </p>
+        <form method="post" class="admin-edit">
+          <input type="hidden" name="zpet" value={back ?? ''} />
+          <input type="hidden" name="lat" value={String(house.lat)} />
+          <input type="hidden" name="lng" value={String(house.lng)} />
+          <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
+          <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
+          <input type="hidden" name="district" value={house.district ?? ''} />
+          <div class="admin-edit-grid">
+            <section>
+              <h2>Pohled z ulice</h2>
+              {hasPano ? (
+                <CameraPicker h={house} />
+              ) : (
+                <>
+                  <p class="muted">Panorama z Mapy.com tu není (Slovensko nebo chybí klíč).</p>
+                  <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
+                  <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
+                  <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
+                </>
+              )}
+            </section>
+            <section>
+              <h2>Údaje</h2>
+              <label>
+                Stav záznamu
+                <select name="status">
+                  {Object.entries(HOUSE_STATUSES).map(([k, l]) => (
+                    <option value={k} selected={house.status === k}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div class="row">
+                <label>
+                  Ulice
+                  <input name="street" maxlength={120} value={house.street ?? ''} />
+                </label>
+                <label>
+                  Číslo
+                  <input name="house_number" maxlength={20} value={house.house_number ?? ''} />
+                </label>
+              </div>
+              <div class="row">
+                <label>
+                  Obec
+                  <input name="municipality" required maxlength={120} value={house.municipality} />
+                </label>
+                <label>
+                  Kraj
+                  <input name="region" maxlength={120} value={house.region ?? ''} />
+                </label>
+              </div>
+              <label class="check">
+                <input type="checkbox" name="hide_number" value="1" checked={!!house.hide_number} /> Nezobrazovat číslo domu
+              </label>
+              <HouseFields house={house} mods={mods} />
+            </section>
+          </div>
+          <div class="admin-edit-actions">
+            <button class="btn btn-primary btn-lg" type="submit">
+              Uložit
+            </button>
+            {back && (
+              <a class="btn btn-lg" href={back}>
+                Zpět bez uložení
+              </a>
+            )}
+          </div>
+        </form>
+      </div>
+    </Layout>,
+  );
+});
+
+admin.post('/dum/:id{[0-9]+}', async (c) => {
+  const db = c.env.DB;
+  const house = await houseById(db, c.req.param('id'));
+  if (!house) return c.notFound();
+  const form = await c.req.parseBody({ all: true });
+  const { data, error } = parseHouseInput({ ...form, country: house.country });
+  if (!data) return c.text(error!, 400);
+
+  const changes = diffHouse({ ...house, modifications: await getModifications(db, house.id) }, data);
+  // Kraj a stav záznamu návrhy veřejnosti neupravují, moderátor ano.
+  if (data.region !== house.region) changes.region = { from: house.region, to: data.region };
+  const status = typeof form.status === 'string' && form.status in HOUSE_STATUSES && form.status !== house.status ? form.status : null;
+
+  const columns = Object.keys(changes).filter((f) => f !== 'modifications');
+  const sets = columns.map((f) => `${f} = ?`);
+  const values: unknown[] = columns.map((f) => changes[f].to);
+  if ('municipality' in changes) {
+    sets.push('municipality_slug = ?');
+    values.push(data.municipality_slug);
+  }
+  if (status) {
+    sets.push('status = ?');
+    values.push(status);
+    if (status === 'approved' && !house.approved_at) sets.push("approved_at = datetime('now')");
+  }
+
+  if (sets.length || 'modifications' in changes) {
+    const label = status ? `Úprava moderátorem (${HOUSE_STATUSES[status as keyof typeof HOUSE_STATUSES].toLowerCase()})` : 'Úprava moderátorem';
+    await db.batch([
+      db.prepare(`UPDATE houses SET ${[...sets, "updated_at = datetime('now')"].join(', ')} WHERE id = ?`).bind(...values, house.id),
+      ...('modifications' in changes ? modificationStatements(db, house.id, data.modifications) : []),
+      ...(status === 'approved'
+        ? [db.prepare(`UPDATE photos SET status = 'approved' WHERE house_id = ? AND status = 'pending'`).bind(house.id)]
+        : []),
+      addRevision(db, house.id, label, changes),
+    ]);
+  }
+  return c.redirect(backTo(str(form.zpet, 300), house.id));
 });

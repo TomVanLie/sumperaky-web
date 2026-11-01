@@ -1,4 +1,5 @@
 import { BOUNDS, DESIGNS, FACADE_COLORS, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
+import { PANO_FOV_MAX, PANO_FOV_MIN } from './lib/streetview';
 import { distance, int, num, slugify, str, url } from './lib/util';
 
 // Místo pohledu smí být nejvýš takhle daleko od domu.
@@ -28,6 +29,7 @@ export type HouseInput = {
   sv_pitch: number | null;
   cam_lat: number | null;
   cam_lng: number | null;
+  pano_fov: number | null;
 };
 
 // Pole, která smí měnit návrh úprav (poloha a adresa včetně).
@@ -51,6 +53,7 @@ export const EDITABLE_FIELDS = [
   'sv_pitch',
   'cam_lat',
   'cam_lng',
+  'pano_fov',
 ] as const;
 
 type Form = Record<string, string | File | (string | File)[]>;
@@ -102,6 +105,7 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
       sv_pitch: num(form.sv_pitch, -90, 90),
       cam_lat: camera?.lat ?? null,
       cam_lng: camera?.lng ?? null,
+      pano_fov: parseFov(form.pano_fov),
     },
   };
 };
@@ -112,6 +116,12 @@ export const parseCamera = (rawLat: unknown, rawLng: unknown, lat: number, lng: 
   const camLng = num(rawLng, BOUNDS.minLng, BOUNDS.maxLng);
   if (camLat === null || camLng === null || distance(lat, lng, camLat, camLng) > CAMERA_MAX_M) return null;
   return { lat: camLat, lng: camLng };
+};
+
+// Přiblížení pohledu z ulice. Prázdné nebo výchozí = NULL.
+export const parseFov = (raw: unknown) => {
+  const fov = num(raw, PANO_FOV_MIN, PANO_FOV_MAX);
+  return fov === null || Math.abs(fov - 1) < 1e-3 ? null : Math.round(fov * 1000) / 1000;
 };
 
 // Rozdíl mezi současným stavem a návrhem, jen u povolených polí.
@@ -151,4 +161,5 @@ export const FIELD_LABELS: Record<string, string> = {
   sv_pitch: 'Sklon Street View',
   cam_lat: 'Místo pohledu z ulice (šířka)',
   cam_lng: 'Místo pohledu z ulice (délka)',
+  pano_fov: 'Přiblížení pohledu z ulice',
 };

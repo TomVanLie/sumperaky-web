@@ -78,6 +78,16 @@ export const isKey = <T extends object>(obj: T, key: unknown): key is keyof T =>
 // Hrubý obdélník ČR a SR, přesná země se ověřuje reverzním geokódováním.
 export const BOUNDS = { minLat: 47.7, maxLat: 51.1, minLng: 12.0, maxLng: 22.6 };
 
+// Přiblížení pohledu z ulice: zorný úhel panoramatu v radiánech (výchozí 1).
+export const PANO_ZOOMS = [
+  { label: 'Širší', fov: 1.4 },
+  { label: '1×', fov: 1 },
+  { label: '1,5×', fov: 0.67 },
+  { label: '2×', fov: 0.5 },
+  { label: '3×', fov: 0.33 },
+  { label: '5×', fov: 0.2 },
+] as const;
+
 export const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 export const MAX_PHOTOS_PER_SUBMIT = 6;
 export const PHOTO_TYPES: Record<string, string> = {
@@ -94,5 +104,6 @@ export const clientConfig = () => ({
   facadeColors: FACADE_COLORS,
   photoPhases: PHOTO_PHASES,
   bounds: BOUNDS,
+  panoZooms: PANO_ZOOMS,
   maxPhotos: MAX_PHOTOS_PER_SUBMIT,
 });

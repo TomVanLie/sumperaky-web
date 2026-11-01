@@ -76,15 +76,16 @@ const bearingRad = (lat1, lng1, lat2, lng2) => {
 };
 
 // Panorama z Mapy.com natočené na dům (jen Česko). S místem pohledu cam = [lng, lat] se díváme
-// z něj (rohové domy), jinak z nejbližšího panoramatu. Musí odpovídat mapyPanoStatic na serveru.
-export const mapyPano = (lat, lng, width = 1024, height = 640, cam = null) => {
+// z něj (rohové domy), jinak z nejbližšího panoramatu. fov = přiblížení (menší = blíž).
+// Musí odpovídat mapyPanoStatic na serveru.
+export const mapyPano = (lat, lng, width = 1024, height = 640, cam = null, fov = null) => {
   const p = new URLSearchParams({
     width: String(width),
     height: String(height),
     lon: String(cam ? cam[0] : lng),
     lat: String(cam ? cam[1] : lat),
     yaw: cam ? bearingRad(cam[1], cam[0], lat, lng).toFixed(3) : 'point',
-    fov: '1',
+    fov: String(fov || 1),
     lang: 'cs',
     apikey: SUMP.mapyKey,
   });

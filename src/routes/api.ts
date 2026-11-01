@@ -11,7 +11,7 @@ import {
   mapPoints,
   recentSubmissions,
 } from '../db';
-import { CAMERA_MAX_M, diffHouse, parseCamera, parseHouseInput } from '../input';
+import { CAMERA_MAX_M, diffHouse, parseCamera, parseFov, parseHouseInput } from '../input';
 import { parsePhotos, storePhotos } from '../photos';
 import { reversePlace, searchPlaces } from '../lib/geocode';
 import { panoMeta } from '../lib/streetview';
@@ -70,6 +70,7 @@ api.get('/houses.geojson', async (c) => {
       v0: r.no_votes,
       cc: r.comments,
       cam: r.cam_lat !== null && r.cam_lng !== null ? [r.cam_lng, r.cam_lat] : 0,
+      z: r.pano_fov ?? 0,
     },
   }));
   return c.json({ type: 'FeatureCollection', features }, 200, { 'Cache-Control': 'public, max-age=60' });
@@ -236,16 +237,19 @@ api.post('/houses/:id/camera', guardWrite, async (c) => {
   if (!house || house.status !== 'approved') return fail('Dům nenalezen.', 404);
 
   const form = await c.req.parseBody();
-  const camera = parseCamera(form.cam_lat, form.cam_lng, house.lat, house.lng);
-  if (!camera) return fail(`Klikni v mapě na ulici nejvýš ${CAMERA_MAX_M} m od domu.`);
+  // Prázdné místo = automatický pohled z nejbližšího panoramatu.
+  const camera = str(form.cam_lat) ? parseCamera(form.cam_lat, form.cam_lng, house.lat, house.lng) : null;
+  if (str(form.cam_lat) && !camera) return fail(`Klikni v mapě na ulici nejvýš ${CAMERA_MAX_M} m od domu.`);
+  const proposed = { cam_lat: camera?.lat ?? null, cam_lng: camera?.lng ?? null, pano_fov: parseFov(form.pano_fov) };
+  const changes = Object.fromEntries(
+    Object.entries(proposed)
+      .filter(([k, v]) => house[k as keyof typeof proposed] !== v)
+      .map(([k, v]) => [k, { from: house[k as keyof typeof proposed], to: v }]),
+  );
+  if (!Object.keys(changes).length) return fail('Pohled je stejný jako teď. Klikni jinam, nebo změň přiblížení.');
 
   await c.env.DB.prepare('INSERT INTO edit_suggestions (house_id, payload, comment, submitter_hash) VALUES (?, ?, ?, ?)')
-    .bind(
-      house.id,
-      JSON.stringify({ cam_lat: { from: house.cam_lat, to: camera.lat }, cam_lng: { from: house.cam_lng, to: camera.lng } }),
-      'Oprava pohledu z ulice',
-      c.get('clientHash'),
-    )
+    .bind(house.id, JSON.stringify(changes), 'Oprava pohledu z ulice', c.get('clientHash'))
     .run();
   return c.json({ ok: true, message: 'Díky! Nový pohled se ukáže po schválení moderátorem.' });
 });

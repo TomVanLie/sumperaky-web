@@ -17,6 +17,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 main { flex: 1; }
 a { color: var(--brand); }
@@ -131,20 +132,59 @@ fieldset.mods label { margin: 0.3rem 0; }
 
 /* ---------- Stránka s mapou ---------- */
 
-.map-layout { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - var(--header-h)); }
-.map-layout.with-results { grid-template-columns: 320px 1fr 380px; }
+.map-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 380px; height: calc(100vh - var(--header-h)); }
+.map-layout.adding { grid-template-columns: 300px minmax(0, 1fr) 420px; }
+.map-center { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
 .map-panel { padding: 1rem 1.25rem; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface); }
 .map-panel h1 { font-size: 1.4rem; margin: 0.2rem 0 0.4rem; }
 .map-panel .lead { font-size: 0.95rem; }
 .filters fieldset label { margin: 0.25rem 0; }
 .map { width: 100%; height: 100%; min-width: 0; }
 
-/* Pravý panel s výpisem domů */
-.results-panel { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
-.results-panel[hidden] { display: none; }
-.results-panel header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
-.results-panel h2 { font-size: 1.05rem; margin: 0; }
-.results-list { list-style: none; margin: 0; padding: 0.5rem; overflow-y: auto; display: grid; gap: 0.5rem; align-content: start; }
+/* Pravý panel: domy ve výřezu mapy, nebo průvodce přidáním */
+.side-panel { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--surface); }
+.browse, .add-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.browse[hidden], .add-panel[hidden] { display: none; }
+.side-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+.side-head h2 { font-size: 1.05rem; margin: 0; }
+.side-head .chip-link { border: 0; cursor: pointer; font: inherit; font-size: 0.8rem; }
+.side-head .chip-link[hidden] { display: none; }
+.results-list { list-style: none; margin: 0; padding: 0.5rem; overflow-y: auto; display: grid; gap: 0.5rem; align-content: start; flex: 1; }
+.results-empty { padding: 1rem; }
+.results-more { margin: 0; padding: 0 0.5rem 0.5rem; }
+.results-more:has([hidden]) { display: none; }
+
+/* Detail vybraného domu pod mapou */
+.house-sheet { position: relative; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1rem; padding: 0.9rem 1rem; max-height: 42vh; overflow-y: auto; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 18px rgb(0 0 0 / 0.08); animation: sheet-in 0.18s ease-out; }
+.house-sheet[hidden] { display: none; }
+@keyframes sheet-in { from { transform: translateY(12px); opacity: 0; } }
+.sheet-media { display: grid; gap: 0.4rem; align-content: start; }
+.sheet-media > .thumb { aspect-ratio: 16 / 10; }
+.sheet-alt { display: flex; align-items: center; gap: 0.5rem; padding: 0; border: 0; background: none; font: inherit; color: var(--brand); cursor: pointer; }
+.sheet-alt .thumb { width: 90px; aspect-ratio: 16 / 10; }
+.sheet-body { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
+.sheet-body h2 { margin: 0; padding-right: 2.5rem; font-size: 1.25rem; }
+.sheet-body h2 a { color: var(--ink); text-decoration: none; }
+.sheet-body h2 a:hover { text-decoration: underline; }
+.sheet-meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0; }
+.sheet-close { position: absolute; top: 0.7rem; right: 0.8rem; }
+.sheet-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.25rem 0 0; }
+.hover-label .maplibregl-popup-content { padding: 0.25rem 0.55rem; font-size: 0.85rem; font-weight: 600; }
+
+/* Průvodce přidáním domu */
+.stepper { display: flex; margin: 0; padding: 0.6rem 1rem; gap: 0.4rem; list-style: none; counter-reset: step; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.stepper li { flex: 1; display: flex; align-items: center; gap: 0.35rem; color: var(--muted); counter-increment: step; }
+.stepper li::before { content: counter(step); display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: #eef0f3; font-weight: 700; }
+.stepper li.current { color: var(--ink); font-weight: 700; }
+.stepper li.current::before { background: var(--accent); color: #fff; }
+.stepper li.done::before { content: '✓'; background: var(--ok); color: #fff; }
+.add-body { flex: 1; overflow-y: auto; padding: 0.75rem 1rem 1.5rem; }
+.add-panel[data-step='2'] .add-hint, .add-panel[data-step='2'] .map-legend { display: none; }
+.add-hint { margin: 0 0 0.6rem; padding: 0.6rem 0.75rem; border-radius: 8px; background: #fff4e5; border: 1px solid #f3c78b; }
+.add-done { text-align: center; display: grid; gap: 0.6rem; padding-top: 1.5rem; }
+.add-done[hidden] { display: none; }
+.add-done h3 { margin: 0; }
+.add-done-icon { font-size: 3rem; margin: 0; }
 .result { display: grid; grid-template-columns: 120px 1fr; gap: 0.75rem; width: 100%; padding: 0.4rem; border: 1px solid transparent; border-radius: var(--radius); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 .result:hover { background: #f3f5f9; }
 .selected .result { border-color: var(--brand); background: #eef2f7; }
@@ -160,12 +200,18 @@ fieldset.mods label { margin: 0.3rem 0; }
 .swatch-inline { display: inline-flex; align-items: center; gap: 0.3rem; }
 .swatch-dot { width: 0.85rem; height: 0.85rem; border-radius: 50%; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); }
 
-@media (max-width: 760px) {
-  .map-layout, .map-layout.with-results { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
+@media (max-width: 1100px) {
+  .map-layout, .map-layout.adding { grid-template-columns: 260px minmax(0, 1fr) 340px; }
+  .house-sheet { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
+  .map-layout, .map-layout.adding { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
   .map-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .map-panel .filters fieldset { display: grid; grid-template-columns: 1fr 1fr; }
-  .map { height: 70vh; }
-  .results-panel { border-left: 0; border-top: 1px solid var(--line); }
+  .map-center { grid-template-rows: 65vh auto; }
+  .house-sheet { max-height: none; }
+  .side-panel { border-left: 0; border-top: 1px solid var(--line); }
+  .results-list { max-height: 80vh; }
 }
 
 /* Bublina na mapě */
@@ -264,9 +310,6 @@ fieldset.mods label { margin: 0.3rem 0; }
 .card-body { padding: 0.6rem 0.75rem; display: grid; gap: 0.35rem; justify-items: start; }
 
 /* Přidání domu */
-.add .step { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.5rem 1.25rem 1rem; margin: 1rem 0; }
-.add h2 { font-size: 1.15rem; }
-.add-map { height: 55vh; min-height: 360px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
 .geosearch { position: relative; margin-bottom: 0.75rem; }
 .suggestions { position: absolute; z-index: 5; left: 0; right: 0; margin: 0.25rem 0 0; padding: 0.25rem; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); }
 .suggestions button { width: 100%; text-align: left; padding: 0.45rem 0.6rem; border: 0; background: none; font: inherit; cursor: pointer; border-radius: 6px; }
@@ -309,18 +352,41 @@ form.inline { display: inline; }
 .diff .to { color: var(--ok); font-weight: 600; }
 
 .small { font-size: 0.85rem; }
-.picked { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 1.5rem; margin: 1.25rem 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.picked { display: grid; gap: 0.5rem; }
 .picked[hidden] { display: none; }
-.picked.no-pano { grid-template-columns: 1fr; max-width: 640px; }
-.picked-media { align-self: start; display: grid; gap: 0.5rem; }
+.picked-media { display: grid; gap: 0.5rem; }
 .picked-media[hidden] { display: none; }
 .cam-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .cam-hint { flex-basis: 100%; margin: 0; padding: 0.4rem 0.6rem; border-radius: 6px; background: #fff4e5; border: 1px solid var(--accent); }
 .cam-marker { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--brand); color: #fff; font-size: 16px; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
-.cam-fix-map { height: 260px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); margin: 0.5rem 0; }
-.cam-fix-preview { position: relative; aspect-ratio: 16 / 10; }
-.picked h2 { margin: 0 0 0.25rem; font-size: 1.3rem; }
-@media (max-width: 860px) { .picked { grid-template-columns: 1fr; } }
+.cam-picker { display: grid; gap: 0.5rem; margin: 0.5rem 0; }
+.cam-picker p { margin: 0; }
+.cam-picker-map { height: 260px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+.cam-picker-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; justify-content: space-between; }
+.picked h3 { margin: 0; font-size: 1.2rem; }
+.chips-sm { gap: 0.3rem; margin: 0; }
+.chips-sm span { padding: 0.2rem 0.6rem; font-size: 0.85rem; }
+
+/* Zvětšený obrázek */
+.lightbox { padding: 0; border: 0; border-radius: var(--radius); background: #111; max-width: 96vw; max-height: 94vh; overflow: hidden; }
+.lightbox::backdrop { background: rgb(0 0 0 / 0.75); }
+.lightbox img { width: min(96vw, 1400px, calc((94vh - 3.2rem) * 1.6)); max-height: calc(94vh - 3.2rem); object-fit: contain; margin: 0 auto; }
+.lightbox-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #111; color: #fff; }
+.lightbox-zoom { display: inline-flex; align-items: center; gap: 0.5rem; }
+.lightbox-zoom[hidden] { display: none; }
+.lightbox-level { min-width: 3rem; text-align: center; font-weight: 600; }
+img.zoomable { cursor: zoom-in; }
+
+/* Moderace: úprava domu */
+.admin-search { display: flex; gap: 0.5rem; max-width: 560px; }
+.admin-search input { margin: 0 !important; }
+.admin-houses { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
+.admin-houses a { display: grid; grid-template-columns: 140px 1fr; gap: 0.9rem; padding: 0.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); color: inherit; text-decoration: none; }
+.admin-houses a:hover { border-color: var(--brand); }
+.admin-houses .thumb { aspect-ratio: 400 / 260; }
+.admin-edit-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem; }
+@media (max-width: 900px) { .admin-edit-grid { grid-template-columns: 1fr; } }
+.admin-edit-actions { position: sticky; bottom: 0; display: flex; gap: 0.5rem; padding: 0.75rem 0; background: var(--bg); border-top: 1px solid var(--line); margin-top: 1rem; }
 .chips { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .chips legend { margin-bottom: 0.4rem; padding: 0; }
 .chips label { margin: 0; font-weight: 500; }
