@@ -1,5 +1,5 @@
 import { Hono, type MiddlewareHandler } from 'hono';
-import { REPORT_KINDS, isKey } from '../domain';
+import { FEATURE_KEYS, REPORT_KINDS, isKey } from '../domain';
 import type { AppEnv } from '../env';
 import {
   addressLine,
@@ -13,7 +13,7 @@ import {
   mapPoints,
   recentSubmissions,
 } from '../db';
-import { CAMERA_MAX_M, diffHouse, parseCamera, parseFov, parseHouseInput } from '../input';
+import { CAMERA_MAX_M, diffHouse, parseCamera, parseFov, parseHeading, parseHouseInput, parsePitch } from '../input';
 import { parsePhotos, storePhotos } from '../photos';
 import { reversePlace, searchPlaces } from '../lib/geocode';
 import { panoMeta } from '../lib/streetview';
@@ -73,6 +73,8 @@ api.get('/houses.geojson', async (c) => {
       cc: r.comments,
       cam: r.cam_lat !== null && r.cam_lng !== null ? [r.cam_lng, r.cam_lat] : 0,
       z: r.pano_fov ?? 0,
+      y: r.sv_heading ?? '',
+      t: r.sv_pitch ?? 0,
     },
   }));
   return c.json({ type: 'FeatureCollection', features }, 200, { 'Cache-Control': 'public, max-age=60' });
@@ -107,6 +109,7 @@ api.get('/houses/:id{[0-9]+}', async (c) => {
       note: house.note,
       link: house.link,
       modifications: mods,
+      features: Object.fromEntries(FEATURE_KEYS.map((k) => [k, house[k]])),
       photos: photos.map((p) => ({ key: p.r2_key, phase: p.phase, year: p.year_taken, caption: p.caption, author: p.author })),
       votes,
       comments: comments.map((k) => ({ id: k.id, nickname: k.nickname, body: k.body, createdAt: k.created_at })),
@@ -282,13 +285,19 @@ api.post('/houses/:id/camera', guardWrite, async (c) => {
   // Prázdné místo = automatický pohled z nejbližšího panoramatu.
   const camera = str(form.cam_lat) ? parseCamera(form.cam_lat, form.cam_lng, house.lat, house.lng) : null;
   if (str(form.cam_lat) && !camera) return fail(`Klikni v mapě na ulici nejvýš ${CAMERA_MAX_M} m od domu.`);
-  const proposed = { cam_lat: camera?.lat ?? null, cam_lng: camera?.lng ?? null, pano_fov: parseFov(form.pano_fov) };
+  const proposed = {
+    cam_lat: camera?.lat ?? null,
+    cam_lng: camera?.lng ?? null,
+    pano_fov: parseFov(form.pano_fov),
+    sv_heading: parseHeading(form.sv_heading),
+    sv_pitch: parsePitch(form.sv_pitch),
+  };
   const changes = Object.fromEntries(
     Object.entries(proposed)
       .filter(([k, v]) => house[k as keyof typeof proposed] !== v)
       .map(([k, v]) => [k, { from: house[k as keyof typeof proposed], to: v }]),
   );
-  if (!Object.keys(changes).length) return fail('Pohled je stejný jako teď. Klikni jinam, nebo změň přiblížení.');
+  if (!Object.keys(changes).length) return fail('Pohled je stejný jako teď. Natoč nebo přibliž náhled, případně klikni v mapě jinam.');
 
   await c.env.DB.prepare('INSERT INTO edit_suggestions (house_id, payload, comment, submitter_hash) VALUES (?, ?, ?, ?)')
     .bind(house.id, JSON.stringify(changes), 'Oprava pohledu z ulice', c.get('clientHash'))

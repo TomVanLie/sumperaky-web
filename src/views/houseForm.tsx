@@ -1,6 +1,30 @@
-import { DESIGNS, MODIFICATIONS, ROOFS, STATES } from '../domain';
+import { DESIGNS, FEATURES, MODIFICATIONS, ROOFS, STATES } from '../domain';
 import type { House } from '../db';
 import { FacadeSwatches } from './components';
+
+// Další znaky domu: ano / ne / nevím.
+export const FeatureFields = ({ house }: { house?: Partial<House> }) => (
+  <fieldset class="features">
+    <legend>Další znaky</legend>
+    {Object.entries(FEATURES).map(([k, label]) => {
+      const v = house?.[k as keyof typeof FEATURES];
+      return (
+        <label>
+          {label}
+          <select name={k}>
+            <option value="">Nevím</option>
+            <option value="1" selected={v === 1}>
+              Ano
+            </option>
+            <option value="0" selected={v === 0}>
+              Ne
+            </option>
+          </select>
+        </label>
+      );
+    })}
+  </fieldset>
+);
 
 // Údaje o domě sdílené formulářem návrhu úprav, přidáním domu a moderací.
 export const HouseFields = ({ house, mods, withState = true }: { house?: Partial<House>; mods?: string[]; withState?: boolean }) => (
@@ -38,6 +62,7 @@ export const HouseFields = ({ house, mods, withState = true }: { house?: Partial
         </label>
       ))}
     </fieldset>
+    {withState && <FeatureFields house={house} />}
     <div class="row">
       <label>
         Rok stavby

@@ -55,6 +55,8 @@ Rohové domy bývají z nejbližšího panoramatu vidět z boční ulice. Proto 
 
 Přiblížení (`pano_fov`, zorný úhel v radiánech, výchozí 1) pomáhá u domů daleko od ulice. Volí se při přidání, v návrhu opravy pohledu i v moderaci.
 
+V moderaci a v návrhu opravy pohledu je živý náhled (`public/js/campicker.js`): dům jde tažením vycentrovat a kolečkem přiblížit. Uloží se natočení `sv_heading` a sklon `sv_pitch` (stupně, sklon kladný nahoru; sloupce zbyly po Street View), přiblížení a jako místo pohledu poloha snímku. Pozor, statické API i JS prohlížeč mají sklon kladný dolů.
+
 Detail domu v mapě ukazuje pohled z ulice rovnou v interaktivním prohlížeči Mapy.com (`public/js/panoviewer.js`, knihovna `panorama.js`): táhnutím se posouvá, kolečkem přibližuje a jde přepnout na starší roky snímků. Jinde (stránka domu, administrace) se otevře kliknutím na snímek. Roky a polohu snímku vrací `api.mapy.cz/v1/panorama/getbest`, který používá i oficiální JS knihovna, ale v dokumentaci REST API není. Prohlížeč se platí za dlaždice, zhruba 40 kreditů za otevření (statický náhled stojí 4), takže tarif zdarma vystačí asi na 5 000 otevřených detailů měsíčně. Než se prohlížeč načte, je vidět statický snímek v poměru stran volného místa.
 
 Barva fasády se vybírá kliknutím do panoramatu (Mapy.com posílá CORS hlavičky) a zaokrouhlí se na nejbližší barvu ze vzorníku `FACADE_COLORS` v `src/domain.ts`.

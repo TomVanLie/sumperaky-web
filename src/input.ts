@@ -1,4 +1,4 @@
-import { BOUNDS, DESIGNS, FACADE_COLORS, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
+import { BOUNDS, DESIGNS, FACADE_COLORS, FEATURES, MODIFICATIONS, ROOFS, STATES, isKey } from './domain';
 import { PANO_FOV_MAX, PANO_FOV_MIN } from './lib/streetview';
 import { distance, int, num, slugify, str, url } from './lib/util';
 
@@ -30,6 +30,9 @@ export type HouseInput = {
   cam_lat: number | null;
   cam_lng: number | null;
   pano_fov: number | null;
+  shutters: 0 | 1 | null;
+  garage_integrated: 0 | 1 | null;
+  original_terrace: 0 | 1 | null;
 };
 
 // Pole, která smí měnit návrh úprav (poloha a adresa včetně).
@@ -54,6 +57,9 @@ export const EDITABLE_FIELDS = [
   'cam_lat',
   'cam_lng',
   'pano_fov',
+  'shutters',
+  'garage_integrated',
+  'original_terrace',
 ] as const;
 
 type Form = Record<string, string | File | (string | File)[]>;
@@ -101,14 +107,20 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
       year_renovated: int(form.year_renovated, 1960, thisYear + 2),
       note: str(form.note, 2000),
       link: url(form.link),
-      sv_heading: num(form.sv_heading, 0, 360),
-      sv_pitch: num(form.sv_pitch, -90, 90),
+      sv_heading: parseHeading(form.sv_heading),
+      sv_pitch: parsePitch(form.sv_pitch),
       cam_lat: camera?.lat ?? null,
       cam_lng: camera?.lng ?? null,
       pano_fov: parseFov(form.pano_fov),
+      shutters: yesNo(form.shutters),
+      garage_integrated: yesNo(form.garage_integrated),
+      original_terrace: yesNo(form.original_terrace),
     },
   };
 };
+
+// Ano / ne / nevím (NULL).
+const yesNo = (raw: unknown) => (raw === '1' ? 1 : raw === '0' ? 0 : null);
 
 // Místo pohledu z ulice: platné jen blízko domu, jinak se ignoruje.
 export const parseCamera = (rawLat: unknown, rawLng: unknown, lat: number, lng: number) => {
@@ -122,6 +134,16 @@ export const parseCamera = (rawLat: unknown, rawLng: unknown, lat: number, lng: 
 export const parseFov = (raw: unknown) => {
   const fov = num(raw, PANO_FOV_MIN, PANO_FOV_MAX);
   return fov === null || Math.abs(fov - 1) < 1e-3 ? null : Math.round(fov * 1000) / 1000;
+};
+
+// Ručně natočený pohled z ulice ve stupních (sklon kladný nahoru), zaokrouhlený na desetiny.
+export const parseHeading = (raw: unknown) => {
+  const deg = num(raw, -360, 720);
+  return deg === null ? null : Math.round((((deg % 360) + 360) % 360) * 10) / 10;
+};
+export const parsePitch = (raw: unknown) => {
+  const deg = num(raw, -90, 90);
+  return deg === null || Math.abs(deg) < 0.05 ? null : Math.round(deg * 10) / 10;
 };
 
 // Rozdíl mezi současným stavem a návrhem, jen u povolených polí.
@@ -157,9 +179,10 @@ export const FIELD_LABELS: Record<string, string> = {
   year_renovated: 'Rok rekonstrukce',
   note: 'Poznámka',
   link: 'Odkaz',
-  sv_heading: 'Natočení Street View',
-  sv_pitch: 'Sklon Street View',
+  sv_heading: 'Natočení pohledu z ulice',
+  sv_pitch: 'Sklon pohledu z ulice',
   cam_lat: 'Místo pohledu z ulice (šířka)',
   cam_lng: 'Místo pohledu z ulice (délka)',
   pano_fov: 'Přiblížení pohledu z ulice',
+  ...FEATURES,
 };

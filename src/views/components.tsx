@@ -107,30 +107,27 @@ export const ZoomChips = ({ selected }: { selected?: number | null }) => (
   </fieldset>
 );
 
-// Výběr místa pohledu a přiblížení: mapa, živý náhled a skrytá pole cam_lat, cam_lng, pano_fov (viz campicker.js).
+// Výběr pohledu z ulice: místo v mapě, natočení a přiblížení přímo v živém náhledu.
+// Skrytá pole cam_lat, cam_lng, pano_fov, sv_heading, sv_pitch (viz campicker.js).
 export const CameraPicker = ({ h }: { h: PanoHouse & { state?: string } }) => (
-  <div
-    class="cam-picker"
-    data-lat={h.lat}
-    data-lng={h.lng}
-    data-state={h.state}
-    data-cam={h.cam_lat != null ? `${h.cam_lng},${h.cam_lat}` : ''}
-    data-fov={h.pano_fov ?? ''}
-  >
+  <div class="cam-picker" data-lat={h.lat} data-lng={h.lng} data-state={h.state}>
     <p class="muted small">
-      Klikni v mapě na ulici před průčelím domu (👁 jde přetáhnout). Náhled se hned změní.
+      V náhledu dům tažením myší vycentruj a kolečkem přibliž, uloží se přesně tento pohled. Když je dům vidět z
+      jiné ulice, klikni v mapě na silnici před průčelím (👁 jde přetáhnout).
     </p>
-    <div class="cam-picker-map"></div>
-    <div class="sv-frame cam-picker-preview">
+    <div class="cam-picker-preview thumb">
       <img alt="Náhled pohledu z ulice" />
-      <div class="sv-placeholder">Na tomhle místě panorama není. Klikni přímo na silnici.</div>
     </div>
     <div class="cam-picker-tools">
-      <ZoomChips selected={h.pano_fov} />
+      <span class="muted small cam-status" aria-live="polite"></span>
       <button type="button" class="btn btn-sm cam-auto">Automatický pohled</button>
     </div>
+    <div class="cam-picker-map"></div>
     <input type="hidden" name="cam_lat" value={h.cam_lat ?? ''} />
     <input type="hidden" name="cam_lng" value={h.cam_lng ?? ''} />
+    <input type="hidden" name="pano_fov" value={h.pano_fov ?? ''} />
+    <input type="hidden" name="sv_heading" value={h.sv_heading ?? ''} />
+    <input type="hidden" name="sv_pitch" value={h.sv_pitch ?? ''} />
   </div>
 );
 

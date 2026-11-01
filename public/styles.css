@@ -39,7 +39,7 @@ h1, h2, h3 { line-height: 1.2; }
   z-index: 10;
 }
 .brand { display: flex; align-items: center; gap: 0.5rem; color: #fff; text-decoration: none; font-weight: 700; font-size: 1.1rem; }
-.site-nav { display: flex; gap: 1rem; flex: 1; overflow-x: auto; }
+.site-nav { display: flex; gap: 1rem; flex: 1; min-width: 0; overflow-x: auto; }
 .site-nav a { color: #dfe7f1; text-decoration: none; white-space: nowrap; }
 .site-nav a.active, .site-nav a:hover { color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 .site-footer { padding: 1.5rem; font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); text-align: center; }
@@ -170,16 +170,15 @@ fieldset.mods label { margin: 0.3rem 0; }
 .sheet-nav .btn:disabled { cursor: default; opacity: 0.4; }
 /* Údaje mají omezenou šířku (nejvýš tři sloupce), všechno ostatní místo dostane obrázek. */
 /* Údaje mají vpravo pevnou šířku, zbytek patří pohledu na dům. */
-.sheet-content { display: grid; grid-template-columns: minmax(0, 1fr) 560px; gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
+.sheet-content { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
 .sheet-media { position: relative; min-height: 0; }
 .sheet-media > .thumb { height: 100%; border-radius: 8px; }
 .sheet-media > .thumb img.zoomable { object-fit: contain; }
 .sheet-alt { position: absolute; z-index: 4; left: 0.5rem; bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.5rem 0.25rem 0.25rem; border: 0; border-radius: 8px; background: rgb(255 255 255 / 0.92); font: inherit; font-size: 0.85rem; color: var(--brand); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25); }
 .sheet-alt .thumb { width: 64px; aspect-ratio: 16 / 10; }
 /* Údaje tečou do sloupců vedle sebe, ať je využitá šířka a detail se neposouvá dolů. */
-/* Dva sloupce údajů; co se výjimečně nevejde, posune se jen v daném sloupci. */
-.sheet-info { min-height: 0; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; font-size: 0.9rem; }
-.sheet-col { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+/* Jeden sloupec: údaje, hlasování, fotky, komentáře. Při delší diskusi se posouvá. */
+.sheet-info { min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-right: 0.4rem; font-size: 0.9rem; }
 .sheet-block { break-inside: avoid; margin: 0 0 0.9rem; display: grid; gap: 0.4rem; }
 .sheet-block h3 { margin: 0; font-size: 0.95rem; break-after: avoid; }
 .sheet-block p, .sheet-block .tags, .sheet-block .note { margin: 0; }
@@ -237,13 +236,20 @@ body.resizing { cursor: row-resize; user-select: none; }
 @media (max-width: 1100px) {
   .map-layout, .map-layout.adding { grid-template-columns: 260px minmax(0, 1fr) 340px; }
 }
-@media (max-width: 1350px) {
-  .sheet-content { grid-template-columns: minmax(0, 1fr) 300px; }
-  .sheet-info { display: block; overflow-y: auto; scrollbar-width: thin; }
-  .sheet-col { overflow: visible; }
+@media (max-width: 1100px) {
+  .sheet-content { grid-template-columns: minmax(0, 1fr) 320px; }
 }
 @media (max-width: 860px) {
-  .map-layout, .map-layout.adding { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
+  .map-layout, .map-layout.adding, .map-layout.filters-collapsed, .map-layout.filters-collapsed.adding { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto; }
+  .map-layout.filters-collapsed .map-panel { display: none; }
+  /* Při otevřeném detailu se filtry schovají, vrátí se po jeho zavření. */
+  .map-center:has(.house-sheet:not([hidden])) .filters-toggle { display: none; }
+  .sheet-nav { flex-wrap: wrap; row-gap: 0.4rem; padding-left: 0.75rem !important; }
+  .sheet-title { flex: 1 1 0; min-width: calc(100% - 3.5rem); flex-wrap: wrap; row-gap: 0.25rem; }
+  .sheet-title h2 { white-space: normal; flex-basis: 100%; }
+  .sheet-nav > [aria-label='Zavřít detail'] { order: 1; align-self: flex-start; }
+  .sheet-nav > :not(.sheet-title):not([aria-label='Zavřít detail']) { order: 2; }
+  .sheet-nav > .btn:not([aria-label='Zavřít detail']) { flex: 1; }
   .map-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .map-panel .filters fieldset { display: grid; grid-template-columns: 1fr 1fr; }
   .map-center { grid-template-rows: auto 65vh; }
@@ -251,7 +257,7 @@ body.resizing { cursor: row-resize; user-select: none; }
   .sheet-content { grid-template-columns: 1fr; }
   .sheet-media { aspect-ratio: 16 / 10; }
 
-  .sheet-info { columns: auto; height: auto; overflow: visible; }
+  .sheet-info { height: auto; overflow: visible; padding-right: 0; }
   .sheet-resize { display: none; }
   .side-panel { border-left: 0; border-top: 1px solid var(--line); }
   .results-list { max-height: 80vh; }
@@ -404,7 +410,8 @@ form.inline { display: inline; }
 .cam-marker { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--brand); color: #fff; font-size: 16px; border: 2px solid #fff; box-shadow: 0 1px 4px rgb(0 0 0 / 0.4); cursor: grab; }
 .cam-picker { display: grid; gap: 0.5rem; margin: 0.5rem 0; }
 .cam-picker p { margin: 0; }
-.cam-picker-map { height: 260px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+.cam-picker-preview { aspect-ratio: 16 / 10; border-radius: var(--radius); }
+.cam-picker-map { height: 220px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
 .cam-picker-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end; justify-content: space-between; }
 .picked h3 { margin: 0; font-size: 1.2rem; }
 .chips-sm { gap: 0.3rem; margin: 0; }
@@ -443,11 +450,11 @@ img.zoomable { cursor: zoom-in; }
 .admin-houses .thumb { aspect-ratio: 400 / 260; }
 .admin-edit-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem; }
 @media (max-width: 900px) { .admin-edit-grid { grid-template-columns: 1fr; } }
-.admin-edit-actions { position: sticky; bottom: 0; display: flex; gap: 0.5rem; padding: 0.75rem 0; background: var(--bg); border-top: 1px solid var(--line); margin-top: 1rem; }
+.admin-edit-actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 0; background: var(--bg); border-top: 1px solid var(--line); margin-top: 1rem; }
 .chips { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .chips legend { margin-bottom: 0.4rem; padding: 0; }
 .chips label { margin: 0; font-weight: 500; }
-.chips input { position: absolute; opacity: 0; pointer-events: none; }
+.chips input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .chips span { display: inline-block; padding: 0.4rem 0.85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; }
 .chips input:checked + span { background: var(--brand); border-color: var(--brand); color: #fff; }
 .chips input:focus-visible + span { outline: 2px solid var(--accent); }
@@ -457,7 +464,7 @@ img.zoomable { cursor: zoom-in; }
 .swatches legend { padding: 0; margin-bottom: 0.3rem; }
 .swatch-list { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .swatch-list label { margin: 0; cursor: pointer; }
-.swatch-list input { position: absolute; opacity: 0; pointer-events: none; }
+.swatch-list input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .swatch { display: inline-block; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--c); border: 1px solid rgb(0 0 0 / 0.2); vertical-align: middle; }
 .swatch-none { display: inline-grid; place-items: center; background: #fff; color: var(--muted); font-weight: 700; }
 .swatch-list input:checked + .swatch { outline: 3px solid var(--brand); outline-offset: 2px; }
@@ -471,8 +478,9 @@ img.zoomable { cursor: zoom-in; }
 .map-legend .dot + .dot { margin-left: 0.75rem; }
 
 /* Schvalování po jednom */
-.review { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; }
-@media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+.review { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.25rem; }
+.review-head > * { margin: 0 0 0.4rem; }
+.review-head h3 { font-size: 1.3rem; }
 .review-media { display: grid; gap: 1rem; align-content: start; }
 .review-info h3 { margin: 0.2rem 0; font-size: 1.4rem; }
 .review-info .meta { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }

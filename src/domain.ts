@@ -43,6 +43,15 @@ export const MODIFICATIONS = {
   solar: 'Fotovoltaika nebo solární panely',
 } as const;
 
+// Další znaky domu, u každého ano / ne / nevím.
+export const FEATURES = {
+  shutters: 'Předokenní rolety',
+  garage_integrated: 'Garáž součástí domu',
+  original_terrace: 'Původní terasa před domem',
+} as const;
+export type FeatureKey = keyof typeof FEATURES;
+export const FEATURE_KEYS = Object.keys(FEATURES) as FeatureKey[];
+
 export const ROOFS = {
   eternit: 'Eternit (osinkocement)',
   metal: 'Plech',
@@ -100,6 +109,7 @@ export const clientConfig = () => ({
   states: STATES,
   modifications: MODIFICATIONS,
   roofs: ROOFS,
+  features: FEATURES,
   designs: DESIGNS,
   facadeColors: FACADE_COLORS,
   photoPhases: PHOTO_PHASES,

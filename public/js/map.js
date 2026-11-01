@@ -66,7 +66,7 @@ const km = ([lng1, lat1], [lng2, lat2]) =>
 const panoSrc = (f, width, height) => {
   const p = f.properties;
   const [lng, lat] = f.geometry.coordinates;
-  return p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height, p.cam || null, p.z || null) : null;
+  return p.k !== 'sk' && SUMP.mapyKey ? mapyPano(lat, lng, width, height, p.cam || null, p.z || null, p.y === '' ? null : p.y, p.t || null) : null;
 };
 
 // Náhled: vlastní fotka, jinak panorama z Mapy.com (jen Česko). Když se nenačte, zůstane zástupný text.
@@ -105,8 +105,8 @@ const votes = (p) =>
 const highlight = (f) => map.getSource('selected')?.setData({ type: 'FeatureCollection', features: f ? [f] : [] });
 
 // ---------- Detail vybraného domu (nad mapou) ----------
-// Všechno podstatné je přímo tady: údaje, fotky, hlasování i komentáře. Výšku detailu jde měnit
-// tažením za spodní okraj, obrázek se přizpůsobí a detail se neposouvá.
+// Všechno podstatné je přímo tady: údaje, fotky, hlasování i komentáře v jednom sloupci vpravo
+// (při delší diskusi se posouvá). Výšku detailu jde měnit tažením za spodní okraj.
 
 const details = new Map();
 const loadDetails = (id, fresh = false) => {
@@ -132,6 +132,7 @@ const factsBlock = (d) => {
     ['Obec', el('a', { href: `/obec/${d.municipalitySlug}` }, d.municipality)],
     ['Okres', d.district],
     ['Kraj', d.region],
+    ...Object.entries(SUMP.features ?? {}).map(([k, label]) => [label, d.features?.[k] == null ? null : d.features[k] ? 'Ano' : 'Ne']),
   ].filter(([, v]) => v);
   const mods = d.modifications.map((m) => SUMP.modifications[m]).filter(Boolean);
   return el(
@@ -304,8 +305,7 @@ const openSheet = (f) => {
   loadDetails(p.id).then((d) => {
     if (selectedId !== p.id) return;
     if (!d) return info.replaceChildren(el('p', { class: 'muted small' }, 'Podrobnosti se nepodařilo načíst.'));
-    const col = (...blocks) => el('div', { class: 'sheet-col' }, blocks);
-    info.replaceChildren(col(factsBlock(d), voteBlock(d), photosBlock(d)), col(commentsBlock(d), moreBlock(d)));
+    info.replaceChildren(...[factsBlock(d), voteBlock(d), photosBlock(d), commentsBlock(d), moreBlock(d)].filter(Boolean));
   });
 
   if (sheet.hidden) {

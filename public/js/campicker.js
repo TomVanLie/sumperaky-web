@@ -1,6 +1,8 @@
 import { createMap, maplibregl, mapyPano, stateColorExpr } from './common.js';
+import { mountPano } from './panoviewer.js';
 
-// Výběr místa pohledu z ulice a přiblížení (detail domu, moderace). Značka 👁 = odkud se díváme.
+// Výběr pohledu z ulice (detail domu, moderace): místo v mapě, natočení a přiblížení v živém náhledu.
+// Značka 👁 = odkud se díváme.
 // Mapu vytváříme až ve chvíli, kdy je výběr vidět (bývá ve sbaleném panelu).
 
 export const houseLayer = (map, lng, lat, state) => {
@@ -27,27 +29,47 @@ export const camMarkerElement = () => {
 const initPicker = (box) => {
   const lng = Number(box.dataset.lng);
   const lat = Number(box.dataset.lat);
-  const camLat = box.querySelector('[name="cam_lat"]');
-  const camLng = box.querySelector('[name="cam_lng"]');
+  const field = (name) => box.querySelector(`[name="${name}"]`);
+  const [camLat, camLng, fovField, headingField, pitchField] = ['cam_lat', 'cam_lng', 'pano_fov', 'sv_heading', 'sv_pitch'].map(field);
   const frame = box.querySelector('.cam-picker-preview');
   const img = frame.querySelector('img');
+  const status = box.querySelector('.cam-status');
   let map;
   let marker;
+  let live = null;
 
-  img.addEventListener('load', () => frame.classList.remove('pano-missing'));
-  img.addEventListener('error', () => frame.classList.add('pano-missing'));
-
+  const value = (input) => (input.value === '' ? null : Number(input.value));
   const camera = () => (camLat.value ? [Number(camLng.value), Number(camLat.value)] : null);
-  const fov = () => Number(box.querySelector('[name="pano_fov"]:checked')?.value) || null;
+  const deg = (rad) => (rad * 180) / Math.PI;
 
-  const preview = () => {
-    frame.classList.remove('pano-missing');
-    img.src = mapyPano(lat, lng, 1024, 640, camera(), fov());
+  const changed = (text) => {
+    status.textContent = text;
+    box.dispatchEvent(new Event('cam-change', { bubbles: true }));
   };
 
-  const changed = () => {
+  // Natočení a přiblížení z živého náhledu jdou rovnou do formuláře. Místo pohledu je místo snímku.
+  const onView = (v) => {
+    headingField.value = deg(v.yaw).toFixed(1);
+    pitchField.value = Math.abs(deg(v.pitch)) < 0.05 ? '' : deg(v.pitch).toFixed(1);
+    const fov = Math.min(1.57, Math.max(0.16, v.fov));
+    fovField.value = Math.abs(fov - 1) < 1e-3 ? '' : fov.toFixed(3);
+    setCamera([v.lon, v.lat]);
+    changed('Pohled je nastavený, ulož formulář.');
+  };
+
+  const preview = () => {
+    live?.destroy();
+    img.src = mapyPano(lat, lng, 1024, 640, camera(), value(fovField), value(headingField), value(pitchField));
+    live = mountPano(frame, img.src, { onView });
+  };
+
+  // Nové místo pohledu: natočení se znovu dopočítá na dům.
+  const moved = (cam) => {
+    setCamera(cam);
+    headingField.value = '';
+    pitchField.value = '';
     preview();
-    box.dispatchEvent(new Event('cam-change', { bubbles: true }));
+    changed(cam ? 'Místo pohledu změněno, v náhledu ho můžeš ještě natočit.' : 'Automatický pohled z nejbližšího místa.');
   };
 
   const setCamera = (cam) => {
@@ -62,18 +84,14 @@ const initPicker = (box) => {
       marker = new maplibregl.Marker({ element: camMarkerElement(), draggable: true }).setLngLat(cam).addTo(map);
       marker.on('dragend', () => {
         const p = marker.getLngLat();
-        setCamera([p.lng, p.lat]);
-        changed();
+        moved([p.lng, p.lat]);
       });
     }
   };
 
   box.querySelector('.cam-auto').addEventListener('click', () => {
-    setCamera(null);
-    changed();
-  });
-  box.addEventListener('change', (e) => {
-    if (e.target.name === 'pano_fov') changed();
+    fovField.value = '';
+    moved(null);
   });
 
   const start = () => {
@@ -81,10 +99,7 @@ const initPicker = (box) => {
     map = createMap(box.querySelector('.cam-picker-map'), { center: camera() ?? [lng, lat], zoom: 18 });
     map.getCanvas().style.cursor = 'crosshair';
     map.on('load', () => houseLayer(map, lng, lat, box.dataset.state));
-    map.on('click', (e) => {
-      setCamera([e.lngLat.lng, e.lngLat.lat]);
-      changed();
-    });
+    map.on('click', (e) => moved([e.lngLat.lng, e.lngLat.lat]));
     setCamera(camera());
     preview();
   };

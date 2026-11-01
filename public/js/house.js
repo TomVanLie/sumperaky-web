@@ -11,7 +11,7 @@ if (article && el) {
   map.on('load', () => houseLayer(map, lng, lat, article.dataset.state));
 }
 
-// Oprava pohledu z ulice: odeslat jde až po změně místa nebo přiblížení.
+// Oprava pohledu z ulice: odeslat jde až po změně místa, natočení nebo přiblížení.
 for (const fix of document.querySelectorAll('.cam-fix')) {
   const submit = fix.querySelector('button[type="submit"]');
   fix.addEventListener('cam-change', () => (submit.disabled = false));

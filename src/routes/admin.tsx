@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
-import { DESIGNS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
+import { DESIGNS, FEATURES, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
 import type { AppEnv } from '../env';
 import { addRevision, addressLine, getModifications, housesNear, modificationStatements, type House, type Photo } from '../db';
 import { EDITABLE_FIELDS, FIELD_LABELS, diffHouse, parseHouseInput } from '../input';
@@ -30,6 +30,7 @@ const Action = ({ action, label, kind, confirm }: { action: string; label: strin
 );
 
 const formatValue = (field: string, v: unknown) => {
+  if (field in FEATURES) return v === null || v === undefined ? 'nevím' : v ? 'ano' : 'ne';
   if (v === null || v === undefined || v === '') return '(prázdné)';
   if (field === 'state') return STATES[v as keyof typeof STATES]?.label ?? String(v);
   if (field === 'design') return DESIGNS[v as keyof typeof DESIGNS] ?? String(v);
@@ -49,7 +50,7 @@ admin.get('/', async (c) => {
          FROM photos p JOIN houses h ON h.id = p.house_id WHERE p.status = 'pending' ORDER BY p.id LIMIT 100`,
     ),
     db.prepare(
-      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number, h.lat, h.lng, h.country, h.cam_lat, h.cam_lng, h.pano_fov
+      `SELECT e.*, h.municipality, h.street, h.house_number, h.hide_number, h.lat, h.lng, h.country, h.cam_lat, h.cam_lng, h.pano_fov, h.sv_heading, h.sv_pitch
          FROM edit_suggestions e JOIN houses h ON h.id = e.house_id WHERE e.status = 'pending' ORDER BY e.id LIMIT 50`,
     ),
     db.prepare(
@@ -216,7 +217,7 @@ admin.get('/', async (c) => {
                   ))}
                 </table>
                 {e.comment && <p class="note">{e.comment}</p>}
-                {('cam_lat' in changes || 'pano_fov' in changes) && (
+                {['cam_lat', 'pano_fov', 'sv_heading', 'sv_pitch'].some((k) => k in changes) && (
                   <div class="cam-compare">
                     {[
                       ['Teď', panoUrl(c.env, e, true)],
@@ -394,7 +395,7 @@ admin.get('/domy', async (c) => {
   const id = q && /^#?\d+$/.test(q) ? Number(q.replace('#', '')) : null;
   const like = `%${q ?? ''}%`;
   const { results } = await c.env.DB.prepare(
-    `SELECT id, status, state, street, house_number, hide_number, municipality, region, lat, lng, country, cam_lat, cam_lng, pano_fov
+    `SELECT id, status, state, street, house_number, hide_number, municipality, region, lat, lng, country, cam_lat, cam_lng, pano_fov, sv_heading, sv_pitch
        FROM houses
       WHERE status != 'rejected'
         AND (?1 IS NULL OR id = ?2 OR municipality LIKE ?3 OR street LIKE ?3 OR (street || ' ' || house_number) LIKE ?3)
@@ -478,8 +479,6 @@ const HouseEditor = ({
       <input type="hidden" name="zpet" value={back ?? ''} />
       <input type="hidden" name="lat" value={String(house.lat)} />
       <input type="hidden" name="lng" value={String(house.lng)} />
-      <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
-      <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
       <input type="hidden" name="district" value={house.district ?? ''} />
       <div class="admin-edit-grid">
         <section>
@@ -491,6 +490,8 @@ const HouseEditor = ({
               <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
               <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
               <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
+              <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
+              <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
             </>
           )}
           <p class="muted small">

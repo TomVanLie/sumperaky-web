@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { DESIGNS, FACADE_COLORS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOFS, STATES, isKey } from '../domain';
+import { DESIGNS, FACADE_COLORS, FEATURES, FEATURE_KEYS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOFS, STATES, isKey } from '../domain';
 import type { AppEnv } from '../env';
 import {
   addressLine,
@@ -16,7 +16,7 @@ import {
 import { FIELD_LABELS } from '../input';
 import { clientHash, formatDate } from '../lib/util';
 import { CameraPicker, FacadeSwatch, FacadeSwatches, HouseCard, ModList, StateBadge, StreetView, ZoomChips, photoUrl, type CardHouse } from '../views/components';
-import { HouseFields } from '../views/houseForm';
+import { FeatureFields, HouseFields } from '../views/houseForm';
 import { Layout, Turnstile } from '../views/layout';
 
 export const pages = new Hono<AppEnv>();
@@ -210,6 +210,8 @@ const AddPanel = ({ siteKey }: { siteKey: string }) => (
             ))}
           </fieldset>
 
+          <FeatureFields />
+
           <FacadeSwatches picker />
 
           <Turnstile siteKey={siteKey} />
@@ -390,6 +392,12 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
                   </dd>
                 </>
               )}
+              {FEATURE_KEYS.filter((k) => house[k] !== null).map((k) => (
+                <>
+                  <dt>{FEATURES[k]}</dt>
+                  <dd>{house[k] ? 'Ano' : 'Ne'}</dd>
+                </>
+              ))}
             </dl>
             {mods.length > 0 && (
               <>
@@ -688,7 +696,7 @@ pages.get('/obce', async (c) => {
   );
 });
 
-const cardsQuery = `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+const cardsQuery = `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.sv_heading, h.sv_pitch, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
       (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
          ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
    FROM houses h`;
@@ -833,7 +841,7 @@ pages.get('/domy', async (c) => {
 
   const [list, total] = await c.env.DB.batch<Record<string, unknown>>([
     c.env.DB.prepare(
-      `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
+      `SELECT h.id, h.lat, h.lng, h.cam_lat, h.cam_lng, h.pano_fov, h.sv_heading, h.sv_pitch, h.country, h.state, h.street, h.house_number, h.hide_number, h.municipality,
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo
          FROM (${base}) h ORDER BY h.municipality, h.street, h.house_number LIMIT ? OFFSET ?`,

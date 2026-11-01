@@ -51,14 +51,17 @@ const parseView = (src) => {
     // Bez místa pohledu (yaw=point) je bod v URL přímo dům.
     house: numeric ? null : [Number(q.get('lon')), Number(q.get('lat'))],
     yaw: numeric ? Number(yaw) : null,
-    pitch: Number(q.get('pitch')) || 0,
+    pitch: Number(q.get('pitch')) || 0, // jako v prohlížeči: kladný dolů
     fov: Number(q.get('fov')) || 1,
   };
 };
 
 // Vloží do `stage` (pozicovaný prvek se statickým snímkem jako zástupcem) živý prohlížeč a lištu s roky.
+// onView dostane pohled, když ho uživatel natočí nebo přiblíží: { yaw, pitch, fov, lon, lat }
+// (yaw a pitch v radiánech, pitch kladný nahoru, lon a lat = místo snímku). Prohlížeč i statické API
+// mají sklon kladný dolů.
 // Vrací { destroy }.
-export const mountPano = (stage, src) => {
+export const mountPano = (stage, src, { onView } = {}) => {
   const view = parseView(src);
   const live = document.createElement('div');
   live.className = 'pano-live';
@@ -71,6 +74,7 @@ export const mountPano = (stage, src) => {
   const date = bar.querySelector('.pano-date');
 
   let viewer = null;
+  let shown = null;
   let latest = null;
   let destroyed = false;
   let request = 0;
@@ -127,12 +131,25 @@ export const mountPano = (stage, src) => {
         pid: found.pid,
         apiKey: SUMP.mapyKey,
         yaw: (yaw + TAU) % TAU,
-        pitch: -view.pitch,
+        pitch: view.pitch,
         fov: Math.max(Math.PI / 20, Math.min(Math.PI / 2, view.fov)),
         showNavigation: true,
         lang: 'cs',
       });
       if (destroyed || mine !== request) return stopViewer();
+      shown = found;
+      if (onView) {
+        const start = viewer.getCamera();
+        let timer;
+        viewer.addListener('pano-view', () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            const cam = viewer?.getCamera();
+            if (!cam || ['yaw', 'pitch', 'fov'].every((k) => Math.abs(cam[k] - start[k]) < 1e-3)) return;
+            onView({ yaw: (cam.yaw + TAU) % TAU, pitch: -cam.pitch, fov: cam.fov, lon: shown.mark.lon, lat: shown.mark.lat });
+          }, 250);
+        });
+      }
       date.textContent = `Snímek z ${formatDate(found.panInfo?.createdAt ?? viewer.info?.date)}`;
       showYears(year);
     } catch {

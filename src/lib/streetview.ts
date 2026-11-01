@@ -23,19 +23,23 @@ export const mapyLink = (h: Pos) =>
 
 // Panorama z Mapy.com (jen Česko). yaw=point natočí kameru z nejbližšího panoramatu na dům.
 // U rohových domů bývá nejbližší panorama v boční ulici. Pak se díváme ze zvoleného místa
-// (cam_lat/cam_lng) s natočením na dům. Obrázky se podle podmínek nesmí ukládat.
+// (cam_lat/cam_lng) s natočením na dům. Moderátor může pohled natočit ručně: sv_heading
+// a sv_pitch ve stupních (sklon kladný nahoru). Obrázky se podle podmínek nesmí ukládat.
 export const mapyPanoStatic = (key: string, h: Pos, width = 1024, height = 640) => {
   const cam = h.cam_lat != null && h.cam_lng != null ? { lat: h.cam_lat, lng: h.cam_lng } : null;
+  const rad = (deg: number) => ((deg * Math.PI) / 180).toFixed(3);
   const p = new URLSearchParams({
     width: String(width),
     height: String(height),
     lon: String(cam?.lng ?? h.lng),
     lat: String(cam?.lat ?? h.lat),
-    yaw: cam ? ((bearing(cam.lat, cam.lng, h.lat, h.lng) * Math.PI) / 180).toFixed(3) : 'point',
+    yaw: h.sv_heading != null ? rad(h.sv_heading) : cam ? rad(bearing(cam.lat, cam.lng, h.lat, h.lng)) : 'point',
     fov: String(h.pano_fov ?? PANO_FOV),
     lang: 'cs',
     apikey: key,
   });
+  // Statické API má sklon kladný dolů.
+  if (h.sv_pitch) p.set('pitch', rad(-h.sv_pitch));
   if (cam) p.set('radius', String(CAMERA_RADIUS_M));
   return `https://api.mapy.cz/v1/static/pano?${p}`;
 };

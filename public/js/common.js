@@ -78,17 +78,21 @@ const bearingRad = (lat1, lng1, lat2, lng2) => {
 // Panorama z Mapy.com natočené na dům (jen Česko). S místem pohledu cam = [lng, lat] se díváme
 // z něj (rohové domy), jinak z nejbližšího panoramatu. fov = přiblížení (menší = blíž).
 // Musí odpovídat mapyPanoStatic na serveru.
-export const mapyPano = (lat, lng, width = 1024, height = 640, cam = null, fov = null) => {
+// heading a pitch: ručně natočený pohled ve stupních (sklon kladný nahoru), jinak natočení na dům.
+export const mapyPano = (lat, lng, width = 1024, height = 640, cam = null, fov = null, heading = null, pitch = null) => {
+  const rad = (deg) => ((deg * Math.PI) / 180).toFixed(3);
   const p = new URLSearchParams({
     width: String(width),
     height: String(height),
     lon: String(cam ? cam[0] : lng),
     lat: String(cam ? cam[1] : lat),
-    yaw: cam ? bearingRad(cam[1], cam[0], lat, lng).toFixed(3) : 'point',
+    yaw: heading != null ? rad(heading) : cam ? bearingRad(cam[1], cam[0], lat, lng).toFixed(3) : 'point',
     fov: String(fov || 1),
     lang: 'cs',
     apikey: SUMP.mapyKey,
   });
+  // Statické API má sklon kladný dolů.
+  if (pitch) p.set('pitch', rad(-pitch));
   if (cam) p.set('radius', '25');
   return `https://api.mapy.cz/v1/static/pano?${p}`;
 };
