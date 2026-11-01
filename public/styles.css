@@ -169,18 +169,21 @@ fieldset.mods label { margin: 0.3rem 0; }
 .sheet-title h2 { margin: 0; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-nav .btn:disabled { cursor: default; opacity: 0.4; }
 /* Údaje mají omezenou šířku (nejvýš tři sloupce), všechno ostatní místo dostane obrázek. */
-.sheet-content { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 42%, 820px); gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
+/* Údaje mají vpravo pevnou šířku, zbytek patří pohledu na dům. */
+.sheet-content { display: grid; grid-template-columns: minmax(0, 1fr) 560px; gap: 1rem; padding: 0.6rem 1rem 0.2rem; min-height: 0; }
 .sheet-media { position: relative; min-height: 0; }
 .sheet-media > .thumb { height: 100%; border-radius: 8px; }
-.sheet-media > .thumb img { object-fit: contain; }
-.sheet-alt { position: absolute; z-index: 2; left: 0.5rem; bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.5rem 0.25rem 0.25rem; border: 0; border-radius: 8px; background: rgb(255 255 255 / 0.92); font: inherit; font-size: 0.85rem; color: var(--brand); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25); }
+.sheet-media > .thumb img.zoomable { object-fit: contain; }
+.sheet-alt { position: absolute; z-index: 4; left: 0.5rem; bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.5rem 0.25rem 0.25rem; border: 0; border-radius: 8px; background: rgb(255 255 255 / 0.92); font: inherit; font-size: 0.85rem; color: var(--brand); cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / 0.25); }
 .sheet-alt .thumb { width: 64px; aspect-ratio: 16 / 10; }
 /* Údaje tečou do sloupců vedle sebe, ať je využitá šířka a detail se neposouvá dolů. */
-.sheet-info { min-height: 0; height: 100%; columns: 230px; column-gap: 1.5rem; column-fill: auto; overflow-x: auto; overflow-y: hidden; font-size: 0.9rem; }
+/* Dva sloupce údajů; co se výjimečně nevejde, posune se jen v daném sloupci. */
+.sheet-info { min-height: 0; height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; font-size: 0.9rem; }
+.sheet-col { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .sheet-block { break-inside: avoid; margin: 0 0 0.9rem; display: grid; gap: 0.4rem; }
 .sheet-block h3 { margin: 0; font-size: 0.95rem; break-after: avoid; }
 .sheet-block p, .sheet-block .tags, .sheet-block .note { margin: 0; }
-.sheet-block.comments { break-inside: auto; display: block; }
+.sheet-block.comments { display: block; margin-top: 0; }
 .sheet-block.comments > * + * { margin-top: 0.4rem; }
 .sheet-block .comment-list { gap: 0.4rem; margin: 0; }
 .sheet-block .comment-list li { padding: 0.35rem 0.55rem; font-size: 0.85rem; break-inside: avoid; }
@@ -233,6 +236,11 @@ body.resizing { cursor: row-resize; user-select: none; }
 
 @media (max-width: 1100px) {
   .map-layout, .map-layout.adding { grid-template-columns: 260px minmax(0, 1fr) 340px; }
+}
+@media (max-width: 1350px) {
+  .sheet-content { grid-template-columns: minmax(0, 1fr) 300px; }
+  .sheet-info { display: block; overflow-y: auto; scrollbar-width: thin; }
+  .sheet-col { overflow: visible; }
 }
 @media (max-width: 860px) {
   .map-layout, .map-layout.adding { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
@@ -409,12 +417,16 @@ form.inline { display: inline; }
 .lightbox-stage img { width: 100%; max-height: calc(96vh - 6rem); object-fit: contain; margin: 0 auto; }
 .lightbox.is-pano .lightbox-stage { aspect-ratio: 16 / 10; }
 .lightbox.is-pano .lightbox-stage img { height: 100%; object-fit: cover; }
-.lightbox-live { position: absolute; inset: 0; }
+.pano-live { position: absolute; inset: 0; z-index: 2; overflow: hidden; background: #111; }
+.pano-bar { position: absolute; z-index: 3; top: 0.5rem; left: 0.5rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; max-width: calc(100% - 1rem); padding: 0.3rem 0.5rem; border-radius: 8px; background: rgb(17 17 17 / 0.72); color: #fff; font-size: 0.82rem; pointer-events: none; }
+.pano-bar > * { pointer-events: auto; }
+.pano-years { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
+.pano-years:empty { display: none; }
+.pano-bar .btn { min-height: 0; padding: 0.15rem 0.5rem; background: #2a2d33; border-color: #3a3e46; color: #fff; font-size: 0.8rem; }
+.pano-bar .btn:hover { border-color: #fff; }
+.pano-bar .btn[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); }
 .lightbox-missing { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: #ccc; }
-.lightbox-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #111; }
-.lightbox-pano { display: none; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; }
-.lightbox.is-pano .lightbox-pano { display: flex; }
-.lightbox-years { display: inline-flex; align-items: center; gap: 0.3rem; }
+.lightbox-bar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #111; }
 .lightbox .btn { background: #2a2d33; border-color: #3a3e46; color: #fff; }
 .lightbox .btn:hover { border-color: #fff; }
 .lightbox .btn[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); }

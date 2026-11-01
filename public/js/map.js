@@ -1,6 +1,7 @@
 import { createAddWizard } from './addwizard.js';
 import { SUMP, createMap, getJson, mapyPano, maplibregl, stateColorExpr } from './common.js';
 import { ajaxForm, commentForm, ensureTurnstile, voteBox } from './forms.js';
+import { mountPano } from './panoviewer.js';
 
 // Poloha z adresy (#zoom/lat/lng) se musí přečíst dřív, než ji mapa začne přepisovat.
 const initialHash = location.hash;
@@ -256,14 +257,16 @@ const openSheet = (f) => {
 
   const pano = panoSrc(f, 400, 250);
   const photo = p.p ? `/foto/${p.p}` : null;
-  media = { f, mode: photo ? 'photo' : 'pano', aspect: 0 };
-  const main = thumb(null, { zoomable: true });
+  stopMedia();
+  media = { f, mode: photo ? 'photo' : 'pano', fitted: false, live: null };
+  const main = thumb(null);
   // Vlastní fotka i pohled z ulice: druhý obrázek jde přepnout.
   const alt = photo && pano ? el('button', { type: 'button', class: 'sheet-alt' }, thumb(pano), el('span', {}, 'Pohled z ulice')) : null;
   alt?.addEventListener('click', () => {
     const toPano = media.mode === 'photo';
+    stopMedia();
     media.mode = toPano ? 'pano' : 'photo';
-    media.aspect = 0;
+    media.fitted = false;
     alt.querySelector('img').src = toPano ? photo : pano;
     alt.lastChild.textContent = toPano ? 'Fotka' : 'Pohled z ulice';
     fitMedia();
@@ -301,7 +304,8 @@ const openSheet = (f) => {
   loadDetails(p.id).then((d) => {
     if (selectedId !== p.id) return;
     if (!d) return info.replaceChildren(el('p', { class: 'muted small' }, 'Podrobnosti se nepodařilo načíst.'));
-    info.replaceChildren(...[factsBlock(d), voteBlock(d), photosBlock(d), commentsBlock(d), moreBlock(d)].filter(Boolean));
+    const col = (...blocks) => el('div', { class: 'sheet-col' }, blocks);
+    info.replaceChildren(col(factsBlock(d), voteBlock(d), photosBlock(d)), col(commentsBlock(d), moreBlock(d)));
   });
 
   if (sheet.hidden) {
@@ -321,37 +325,34 @@ const openSheet = (f) => {
   if (!map.getBounds().contains(f.geometry.coordinates)) map.easeTo({ center: f.geometry.coordinates }, { keepList: true });
 };
 
-// Pohled z ulice se stahuje přesně v poměru stran místa, které má k dispozici, takže ho celé vyplní.
-// Nový snímek (4 kredity) jen při znatelné změně tvaru, ne při každém pohybu táhla.
+// Pohled z ulice je rovnou interaktivní (posouvání, přiblížení, starší roky). Než se načte, je vidět
+// statický snímek stažený v poměru stran místa, které má k dispozici. Vlastní fotka jde zvětšit klikem.
 let media = null;
+const stopMedia = () => {
+  media?.live?.destroy();
+  if (media) media.live = null;
+};
 const fitMedia = () => {
   const box = sheet.querySelector('.sheet-media');
-  const img = box?.querySelector('.thumb img') ?? null;
-  if (!box || !media) return;
+  if (!box || !media || media.fitted) return;
   const { f, mode } = media;
+  const w = box.clientWidth;
+  const h = box.clientHeight;
+  if (!w || !h) return;
   let src;
-  if (mode === 'photo') {
-    if (media.aspect) return;
-    media.aspect = 1;
-    src = `/foto/${f.properties.p}`;
-  } else {
-    const w = box.clientWidth;
-    const h = box.clientHeight;
-    if (!w || !h) return;
-    const aspect = w / h;
-    if (media.aspect && Math.abs(aspect / media.aspect - 1) < 0.08) return;
-    media.aspect = aspect;
+  if (mode === 'photo') src = `/foto/${f.properties.p}`;
+  else {
     const scale = 1024 / Math.max(w, h);
     src = panoSrc(f, Math.max(10, Math.round(w * scale)), Math.max(10, Math.round(h * scale)));
   }
-  const thumbBox = box.querySelector('.thumb');
   if (!src) return;
-  if (img) img.src = src;
-  else {
-    const fresh = el('img', { src, alt: '', class: 'zoomable' });
-    fresh.addEventListener('error', () => fresh.remove());
-    thumbBox.append(fresh);
-  }
+  media.fitted = true;
+  const thumbBox = box.querySelector('.sheet-media > .thumb');
+  thumbBox.querySelector('img')?.remove();
+  const img = el('img', { src, alt: '', class: mode === 'photo' ? 'zoomable' : null });
+  img.addEventListener('error', () => img.remove());
+  thumbBox.append(img);
+  if (mode === 'pano') media.live = mountPano(thumbBox, src);
 };
 
 // ---------- Výška detailu (táhlo na spodním okraji) ----------
@@ -416,6 +417,8 @@ const step = (delta) => {
 
 const closeSheet = () => {
   selectedId = null;
+  stopMedia();
+  media = null;
   sheet.hidden = true;
   sheet.replaceChildren();
   highlight(null);
@@ -533,8 +536,13 @@ const refresh = () => {
 };
 
 // Pohyb mapy uživatelem zruší výběr shluku a seznam se přepočítá podle výřezu.
+// Změna velikosti mapy (táhlo detailu, okno) při otevřeném detailu seznam nemění, ať fungují Předchozí a Další.
+let lastCamera = '';
 map.on('moveend', (e) => {
-  if (e.keepList) return;
+  const camera = `${map.getCenter().toArray()}|${map.getZoom()}|${map.getBearing()}|${map.getPitch()}`;
+  const resizedOnly = camera === lastCamera;
+  lastCamera = camera;
+  if (e.keepList || (resizedOnly && selectedId !== null)) return;
   if (!e.fromCluster) clusterIds = null;
   limit = PAGE;
   renderList();
