@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { csrf } from 'hono/csrf';
 import { DESIGNS, FEATURES, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, STATES } from '../domain';
 import type { AppEnv } from '../env';
-import { addRevision, addressLine, getModifications, housesNear, modificationStatements, type House, type Photo } from '../db';
+import { addRevision, addressLine, getModifications, modificationStatements, type House, type Photo } from '../db';
 import { EDITABLE_FIELDS, FIELD_LABELS, diffHouse, parseHouseInput } from '../input';
 import { requireAccess } from '../lib/access';
 import { mapyLink, streetViewLink } from '../lib/streetview';
-import { distance, formatDate, slugify, str } from '../lib/util';
+import { formatDate, slugify, str } from '../lib/util';
 import { CameraPicker, StateBadge, panoUrl } from '../views/components';
 import { HouseFields } from '../views/houseForm';
 import { Layout } from '../views/layout';
@@ -70,17 +70,7 @@ admin.get('/', async (c) => {
   const { n: pendingTotal, skipped } = pendingCount.results[0] as { n: number; skipped: number | null };
   // Pořadí aktuálního domu ve frontě (přeskočené jsou před ním).
   const position = (skipped ?? 0) + 1;
-  const [currentMods, neighbours] = current
-    ? await Promise.all([
-        getModifications(db, current.id),
-        housesNear(db, current.lat, current.lng, 40).then((rows) =>
-          rows
-            .filter((r) => r.id !== current.id)
-            .map((r) => ({ ...r, distance: Math.round(distance(current.lat, current.lng, r.lat, r.lng)) }))
-            .filter((r) => r.distance <= 40),
-        ),
-      ])
-    : [[], []];
+  const currentMods = current ? await getModifications(db, current.id) : [];
   const currentPano = current ? panoUrl(c.env, current) : null;
   const allPhotos = photos.results as unknown as (Photo & { house_status: string } & House)[];
   // Fotky nových domů ukazujeme u domu, ostatní zvlášť.
@@ -138,19 +128,6 @@ admin.get('/', async (c) => {
                   {current.hide_number ? ' · číslo skryté' : ''}
                 </p>
                 <h3>{addressLine(current)}</h3>
-                {neighbours.length > 0 && (
-                  <div class="alert">
-                    <strong>Možná duplicita, v okolí už je:</strong>
-                    <ul>
-                      {neighbours.map((n) => (
-                        <li>
-                          <a href={`/admin/dum/${n.id}`}>#{n.id}</a> {addressLine(n)} (
-                          {n.status === 'approved' ? 'na mapě' : 'čeká'}, {n.distance} m)
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 {(photosByHouse.get(current.id) ?? []).length > 0 && (
                   <div class="mod-photos">
                     {(photosByHouse.get(current.id) ?? []).map((p) => (

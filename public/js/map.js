@@ -32,6 +32,7 @@ const filtered = () => {
   const mod = form.mod.value;
   const color = form.color.value;
   const design = form.design.value;
+  const basement = form.basement.value;
   const photoOnly = form.photo.checked;
   return all.features.filter((f) => {
     const p = f.properties;
@@ -40,6 +41,7 @@ const filtered = () => {
       (!mod || p.m.split(',').includes(mod)) &&
       (!color || p.c === color) &&
       (!design || p.d === design) &&
+      (!basement || String(p.b) === basement) &&
       (!photoOnly || p.p)
     );
   });
@@ -231,24 +233,12 @@ const commentsBlock = (d) => {
   return box;
 };
 
+// Úpravy, fotky a nahlášení jsou na jedné stránce domu.
 const moreBlock = (d) =>
   el(
     'section',
     { class: 'sheet-block sheet-more' },
-    el('h3', {}, 'Další možnosti'),
-    el(
-      'p',
-      {},
-      el('a', { href: `/dum/${d.id}` }, 'Stránka domu'),
-      ' · ',
-      el('a', { href: `/dum/${d.id}#fotky-pridat` }, 'Přidat fotky'),
-      ' · ',
-      el('a', { href: `/dum/${d.id}#upravit` }, 'Navrhnout úpravu'),
-      ' · ',
-      el('a', { href: `/dum/${d.id}#pohled` }, 'Opravit pohled z ulice'),
-      ' · ',
-      el('a', { href: `/dum/${d.id}#nahlasit` }, 'Nahlásit'),
-    ),
+    el('a', { class: 'btn btn-block', href: `/dum/${d.id}` }, '✎ Upravit, přidat fotky nebo nahlásit'),
   );
 
 const openSheet = (f) => {

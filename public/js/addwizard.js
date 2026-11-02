@@ -28,7 +28,6 @@ export const createAddWizard = ({ map, onOpen, onClose }) => {
   const picked = document.getElementById('picked');
   const pano = document.getElementById('picked-pano');
   const heading = document.getElementById('picked-address');
-  const duplicates = document.getElementById('duplicates');
   const done = panel.querySelector('.add-done');
   const camPick = document.getElementById('cam-pick');
   const camReset = document.getElementById('cam-reset');
@@ -78,7 +77,7 @@ export const createAddWizard = ({ map, onOpen, onClose }) => {
   if (map.loaded()) addMineLayer();
   else map.on('load', addMineLayer);
 
-  // ---------- Adresa a duplicity ----------
+  // ---------- Adresa ----------
 
   const addressLabel = () => {
     const street = [f('street').value, f('house_number').value].filter(Boolean).join(' ');
@@ -97,20 +96,6 @@ export const createAddWizard = ({ map, onOpen, onClose }) => {
   for (const name of ['street', 'house_number', 'municipality']) {
     f(name).addEventListener('input', () => (heading.textContent = addressLabel()));
   }
-
-  const checkDuplicates = async (lat, lng) => {
-    const near = await getJson(`/api/nearby?lat=${lat}&lng=${lng}`).catch(() => []);
-    duplicates.hidden = !near.length;
-    duplicates.innerHTML = near.length
-      ? `<strong>Tenhle dům už možná máme:</strong><ul>${near
-          .map((h) =>
-            h.status === 'approved'
-              ? `<li><a href="/dum/${h.id}" target="_blank">${escapeHtml(h.label)}</a> (${h.distance} m)</li>`
-              : `<li>${escapeHtml(h.label)}, čeká na schválení (${h.distance} m)</li>`,
-          )
-          .join('')}</ul>`
-      : '';
-  };
 
   // ---------- Pohled z ulice, místo pohledu a přiblížení ----------
 
@@ -221,7 +206,6 @@ export const createAddWizard = ({ map, onOpen, onClose }) => {
     setPicking(false);
     f('cam_lat').value = '';
     setCamera(null);
-    checkDuplicates(lat, lng);
     fillAddress(place ?? (await getJson(`/api/reverse?lat=${lat}&lng=${lng}`).catch(() => null)));
   };
 
@@ -277,7 +261,6 @@ export const createAddWizard = ({ map, onOpen, onClose }) => {
     setCamera(null);
     pano.hidden = true;
     pano.removeAttribute('src');
-    duplicates.hidden = true;
     search.value = '';
     showResults([]);
     form.querySelector('.form-msg').textContent = '';

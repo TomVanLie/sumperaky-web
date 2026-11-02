@@ -33,6 +33,7 @@ export type HouseInput = {
   shutters: 0 | 1 | null;
   garage_integrated: 0 | 1 | null;
   original_terrace: 0 | 1 | null;
+  basement: 0 | 1 | null;
 };
 
 // Pole, která smí měnit návrh úprav (poloha a adresa včetně).
@@ -60,6 +61,7 @@ export const EDITABLE_FIELDS = [
   'shutters',
   'garage_integrated',
   'original_terrace',
+  'basement',
 ] as const;
 
 type Form = Record<string, string | File | (string | File)[]>;
@@ -115,6 +117,7 @@ export const parseHouseInput = (form: Form): { data?: HouseInput; error?: string
       shutters: yesNo(form.shutters),
       garage_integrated: yesNo(form.garage_integrated),
       original_terrace: yesNo(form.original_terrace),
+      basement: yesNo(form.basement),
     },
   };
 };

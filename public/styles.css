@@ -287,7 +287,11 @@ body.resizing { cursor: row-resize; user-select: none; }
 .house h1 { margin: 0.3rem 0; }
 .house .meta { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; color: var(--muted); }
 .house-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 2rem; margin-top: 1rem; }
-@media (max-width: 900px) { .house-grid { grid-template-columns: 1fr; } }
+/* Stránka domu: vlevo živý pohled (zůstává vidět při vyplňování), vpravo formulář úprav. */
+.house-edit .house-grid > div:first-child { position: sticky; top: 1rem; align-self: start; }
+.house-edit h2 { margin: 0; }
+.house-extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 0 1rem; align-items: start; margin-top: 1.5rem; }
+@media (max-width: 900px) { .house-grid { grid-template-columns: 1fr; } .house-edit .house-grid > div:first-child { position: static; } }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; margin: 0 0 1rem; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; font-weight: 600; }

@@ -48,6 +48,7 @@ export const FEATURES = {
   shutters: 'Předokenní rolety',
   garage_integrated: 'Garáž součástí domu',
   original_terrace: 'Původní terasa před domem',
+  basement: 'Podsklepený',
 } as const;
 export type FeatureKey = keyof typeof FEATURES;
 export const FEATURE_KEYS = Object.keys(FEATURES) as FeatureKey[];

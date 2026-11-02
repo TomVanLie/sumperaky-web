@@ -29,6 +29,7 @@ export type House = {
   shutters: number | null;
   garage_integrated: number | null;
   original_terrace: number | null;
+  basement: number | null;
   created_at: string;
   updated_at: string;
   approved_at: string | null;
@@ -64,7 +65,7 @@ export const mapPoints = async (db: D1Database) => {
               (SELECT r2_key FROM photos p WHERE p.house_id = h.id AND p.status = 'approved'
                  ORDER BY CASE p.phase WHEN 'current' THEN 0 WHEN 'after' THEN 1 ELSE 2 END, p.id DESC LIMIT 1) AS photo,
               h.street, h.house_number, h.hide_number, h.municipality, h.region, h.facade_color, h.design,
-              h.country, h.year_built, h.year_renovated, h.cam_lat, h.cam_lng, h.pano_fov, h.sv_heading, h.sv_pitch,
+              h.country, h.year_built, h.year_renovated, h.cam_lat, h.cam_lng, h.pano_fov, h.sv_heading, h.sv_pitch, h.basement,
               (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 1) AS yes_votes,
               (SELECT count(*) FROM votes v WHERE v.house_id = h.id AND v.vote = 0) AS no_votes,
               (SELECT count(*) FROM comments k WHERE k.house_id = h.id AND k.status = 'visible') AS comments
@@ -74,7 +75,7 @@ export const mapPoints = async (db: D1Database) => {
       Pick<
         House,
         | 'id' | 'lat' | 'lng' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality' | 'region'
-        | 'facade_color' | 'design' | 'country' | 'year_built' | 'year_renovated' | 'cam_lat' | 'cam_lng' | 'pano_fov' | 'sv_heading' | 'sv_pitch'
+        | 'facade_color' | 'design' | 'country' | 'year_built' | 'year_renovated' | 'cam_lat' | 'cam_lng' | 'pano_fov' | 'sv_heading' | 'sv_pitch' | 'basement'
       > & {
         mods: string | null;
         photo: string | null;
@@ -142,28 +143,14 @@ export const addRevision = (db: D1Database, houseId: number, summary: string, ch
     .prepare('INSERT INTO revisions (house_id, summary, changes) VALUES (?, ?, ?)')
     .bind(houseId, summary, changes ? JSON.stringify(changes) : null);
 
-// Domy v okolí (pro kontrolu duplicit). Hrubý výběr obdélníkem, přesná vzdálenost dopočítá volající.
-export const housesNear = async (db: D1Database, lat: number, lng: number, meters: number) => {
-  const dLat = meters / 111320;
-  const dLng = meters / (111320 * Math.cos((lat * Math.PI) / 180));
-  const { results } = await db
-    .prepare(
-      `SELECT id, lat, lng, status, street, house_number, hide_number, municipality FROM houses
-        WHERE status IN ('approved', 'pending') AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?`,
-    )
-    .bind(lat - dLat, lat + dLat, lng - dLng, lng + dLng)
-    .all<Pick<House, 'id' | 'lat' | 'lng' | 'status' | 'street' | 'house_number' | 'hide_number' | 'municipality'>>();
-  return results;
-};
-
 export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: string) => {
   const row = await db
     .prepare(
       `INSERT INTO houses (lat, lng, country, street, house_number, hide_number, municipality, municipality_slug,
                            district, region, state, design, roof, facade_color, year_built, year_renovated, note, link,
-                           sv_heading, sv_pitch, cam_lat, cam_lng, pano_fov, shutters, garage_integrated, original_terrace,
+                           sv_heading, sv_pitch, cam_lat, cam_lng, pano_fov, shutters, garage_integrated, original_terrace, basement,
                            submitter_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
     )
     .bind(
       h.lat,
@@ -192,6 +179,7 @@ export const insertHouse = async (db: D1Database, h: HouseInput, submitterHash: 
       h.shutters,
       h.garage_integrated,
       h.original_terrace,
+      h.basement,
       submitterHash,
     )
     .first<{ id: number }>();

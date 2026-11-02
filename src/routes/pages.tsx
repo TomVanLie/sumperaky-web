@@ -1,21 +1,17 @@
 import { Hono } from 'hono';
-import { DESIGNS, FACADE_COLORS, FEATURES, FEATURE_KEYS, MODIFICATIONS, PHOTO_PHASES, REPORT_KINDS, ROOFS, STATES, isKey } from '../domain';
+import { DESIGNS, FACADE_COLORS, MODIFICATIONS, REPORT_KINDS, STATES, isKey } from '../domain';
 import type { AppEnv } from '../env';
 import {
   addressLine,
-  getComments,
   getHouse,
   getModifications,
   getPhotos,
   getRevisions,
-  getVotes,
   type House,
-  type Comment,
-  type Votes,
 } from '../db';
 import { FIELD_LABELS } from '../input';
-import { clientHash, formatDate } from '../lib/util';
-import { CameraPicker, FacadeSwatch, FacadeSwatches, HouseCard, ModList, StateBadge, StreetView, ZoomChips, photoUrl, type CardHouse } from '../views/components';
+import { formatDate } from '../lib/util';
+import { CameraPicker, FacadeSwatches, HouseCard, StateBadge, StreetView, ZoomChips, photoUrl, type CardHouse } from '../views/components';
 import { FeatureFields, HouseFields } from '../views/houseForm';
 import { Layout, Turnstile } from '../views/layout';
 
@@ -85,6 +81,14 @@ pages.get('/', async (c) => {
                 {Object.entries(FACADE_COLORS).map(([k, f]) => (
                   <option value={k}>{f.label}</option>
                 ))}
+              </select>
+            </label>
+            <label>
+              Podsklepený
+              <select name="basement">
+                <option value="">Nezáleží</option>
+                <option value="1">Ano</option>
+                <option value="0">Ne</option>
               </select>
             </label>
             <label class="check">
@@ -167,7 +171,6 @@ const AddPanel = ({ siteKey }: { siteKey: string }) => (
         <section id="picked" class="add-step picked" data-step="2" hidden>
           <h3 id="picked-address">Vybraný dům</h3>
           <p class="muted small">Není to ono? Klikni v mapě vedle, nebo přetáhni špendlík.</p>
-          <div id="duplicates" class="alert" hidden></div>
 
           <div class="picked-media">
             <div class="sv-frame picked-pano">
@@ -283,298 +286,158 @@ pages.get('/dum/:id{[0-9]+}', async (c) => {
   const house = await getHouse(c.env.DB, Number(c.req.param('id')));
   if (!house || house.status !== 'approved') return c.html(notFound(c), 404);
 
-  const voter = await clientHash(c.req.header('CF-Connecting-IP'), c.env.IP_SALT);
-  const [mods, photos, revisions, votes, comments] = await Promise.all([
+  const [mods, photos, revisions] = await Promise.all([
     getModifications(c.env.DB, house.id),
     getPhotos(c.env.DB, house.id),
     getRevisions(c.env.DB, house.id),
-    getVotes(c.env.DB, house.id, voter),
-    getComments(c.env.DB, house.id),
   ]);
-  const before = photos.find((p) => p.phase === 'before');
   const after = [...photos].reverse().find((p) => p.phase === 'after' || p.phase === 'current');
   const address = addressLine(house);
   const siteKey = c.env.TURNSTILE_SITE_KEY;
+  // Živý pohled z ulice jde rovnou natočit, nahrazuje náhledový obrázek.
+  const livePicker = !!c.env.MAPY_API_KEY && house.country !== 'sk';
 
   return c.html(
     <Layout
       env={c.env}
       path={`/dum/${house.id}`}
       title={`Šumperák, ${address}`}
-      description={`Šumperák v obci ${house.municipality}: ${STATES[house.state as keyof typeof STATES]?.label ?? ''}. Fotky, úpravy a pohled z ulice.`}
+      description={`Šumperák v obci ${house.municipality}: ${STATES[house.state as keyof typeof STATES]?.label ?? ''}. Úpravy údajů, fotky a pohled z ulice.`}
       image={after ? photoUrl(after.r2_key) : undefined}
       map
       turnstile
       scripts={['/js/house.js', '/js/campicker.js']}
     >
-      <article class="page house" data-lat={house.lat} data-lng={house.lng} data-state={house.state}>
+      <article class="page house">
         <p class="crumbs">
-          <a href="/obce">Obce</a> › <a href={`/obec/${house.municipality_slug}`}>{house.municipality}</a>
+          <a href={`/?dum=${house.id}`}>‹ Zpět na mapu</a>
         </p>
         <h1>{address}</h1>
         <p class="meta">
           <StateBadge state={house.state} />
-          {house.district && <span>{house.district}</span>}
+          <a href={`/obec/${house.municipality_slug}`}>{house.municipality}</a>
           {house.region && <span>{house.region}</span>}
           <span>{house.country === 'sk' ? 'Slovensko' : 'Česko'}</span>
         </p>
 
-        <div class="house-grid">
-          <div>
-            {before && after ? (
-              <figure class="compare" style="--pos:50%">
-                <img src={photoUrl(after.r2_key)} alt="Po rekonstrukci" />
-                <img class="compare-before" src={photoUrl(before.r2_key)} alt="Před rekonstrukcí" />
-                <input type="range" min="0" max="100" value="50" aria-label="Posunout porovnání před a po" />
-                <figcaption>
-                  <span>Před{before.year_taken ? ` (${before.year_taken})` : ''}</span>
-                  <span>Po{after.year_taken ? ` (${after.year_taken})` : ''}</span>
-                </figcaption>
-              </figure>
-            ) : null}
-
-            <StreetView h={house} keys={c.env} />
-            {c.env.MAPY_API_KEY && house.country !== 'sk' && <CameraFix house={house} siteKey={siteKey} />}
-
-            {photos.length > 0 && (
-              <section>
-                <h2>Fotky</h2>
-                <div class="gallery">
-                  {photos.map((p) => (
-                    <figure>
-                      <a href={photoUrl(p.r2_key)} target="_blank">
-                        <img class="zoomable" src={photoUrl(p.r2_key)} alt={p.caption ?? PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]} loading="lazy" />
-                      </a>
-                      <figcaption>
-                        {PHOTO_PHASES[p.phase as keyof typeof PHOTO_PHASES]}
-                        {p.year_taken ? `, ${p.year_taken}` : ''}
-                        {p.caption ? `: ${p.caption}` : ''}
-                        {p.author ? <span class="muted"> · foto {p.author}</span> : null}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <Comments houseId={house.id} comments={comments} siteKey={siteKey} />
+        <form class="ajax house-edit" id="upravit" action={`/api/houses/${house.id}/edit`} method="post">
+          <input type="hidden" name="lat" value={String(house.lat)} />
+          <input type="hidden" name="lng" value={String(house.lng)} />
+          <div class="house-grid">
+            <div>
+              {livePicker ? (
+                <CameraPicker h={house} />
+              ) : (
+                <>
+                  <StreetView h={house} keys={c.env} />
+                  <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
+                  <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
+                  <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
+                  <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
+                  <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
+                </>
+              )}
+            </div>
+            <div>
+              <h2>Navrhnout úpravu</h2>
+              <p class="muted small">Oprav, co nesedí, a odešli. Změny se projeví po schválení moderátorem.</p>
+              <div class="row">
+                <label>
+                  Ulice
+                  <input name="street" maxlength={120} value={house.street ?? ''} />
+                </label>
+                <label>
+                  Číslo
+                  <input name="house_number" maxlength={20} value={house.house_number ?? ''} />
+                </label>
+              </div>
+              <label>
+                Obec
+                <input name="municipality" required maxlength={120} value={house.municipality} />
+              </label>
+              <label class="check">
+                <input type="checkbox" name="hide_number" value="1" checked={!!house.hide_number} /> Nezobrazovat číslo domu
+              </label>
+              <HouseFields house={house} mods={mods} />
+              <label>
+                Komentář pro moderátora
+                <textarea name="comment" rows={2} maxlength={1000}></textarea>
+              </label>
+              <Turnstile siteKey={siteKey} />
+              <button class="btn btn-primary" type="submit">
+                Odeslat návrh
+              </button>
+              <p class="form-msg" role="status"></p>
+            </div>
           </div>
+        </form>
 
-          <aside>
-            <dl class="facts">
-              <dt>Stav</dt>
-              <dd>{STATES[house.state as keyof typeof STATES]?.label}</dd>
-              <dt>Návrh</dt>
-              <dd>{DESIGNS[house.design as keyof typeof DESIGNS]}</dd>
-              {house.year_built && (
-                <>
-                  <dt>Rok stavby</dt>
-                  <dd>{house.year_built}</dd>
-                </>
-              )}
-              {house.year_renovated && (
-                <>
-                  <dt>Rok rekonstrukce</dt>
-                  <dd>{house.year_renovated}</dd>
-                </>
-              )}
-              {house.roof && isKey(ROOFS, house.roof) && (
-                <>
-                  <dt>Střešní krytina</dt>
-                  <dd>{ROOFS[house.roof]}</dd>
-                </>
-              )}
-              {house.facade_color && (
-                <>
-                  <dt>Barva fasády</dt>
-                  <dd>
-                    <FacadeSwatch color={house.facade_color} />
-                  </dd>
-                </>
-              )}
-              {FEATURE_KEYS.filter((k) => house[k] !== null).map((k) => (
-                <>
-                  <dt>{FEATURES[k]}</dt>
-                  <dd>{house[k] ? 'Ano' : 'Ne'}</dd>
-                </>
-              ))}
-            </dl>
-            {mods.length > 0 && (
-              <>
-                <h3>Úpravy</h3>
-                <ModList mods={mods} />
-              </>
-            )}
-            {house.note && <p class="note">{house.note}</p>}
-            {house.link && (
-              <p>
-                <a href={house.link} target="_blank" rel="noopener nofollow ugc">
-                  Související odkaz
-                </a>
+        <div class="house-extra">
+          <details class="panel" id="fotky-pridat">
+            <summary>Přidat fotky</summary>
+            <form class="ajax photo-form" action={`/api/houses/${house.id}/photos`} method="post" enctype="multipart/form-data">
+              <div class="photo-slots" data-slots="3"></div>
+              <label>
+                Autor fotek (nepovinné)
+                <input name="author" maxlength={80} />
+              </label>
+              <p class="muted small">
+                Nahráním potvrzuješ, že fotky jsou z veřejného prostranství, a souhlasíš s jejich zveřejněním pod
+                licencí CC BY-SA 4.0.
               </p>
-            )}
+              <Turnstile siteKey={siteKey} />
+              <button class="btn btn-primary" type="submit">
+                Nahrát fotky
+              </button>
+              <p class="form-msg" role="status"></p>
+            </form>
+          </details>
 
-            <div id="mini-map" class="mini-map"></div>
-
-            <VoteBox houseId={house.id} votes={votes} siteKey={siteKey} />
-
-            <details class="panel" id="fotky-pridat">
-              <summary>Přidat fotky</summary>
-              <form class="ajax photo-form" action={`/api/houses/${house.id}/photos`} method="post" enctype="multipart/form-data">
-                <div class="photo-slots" data-slots="3"></div>
-                <label>
-                  Autor fotek (nepovinné)
-                  <input name="author" maxlength={80} />
-                </label>
-                <p class="muted small">
-                  Nahráním potvrzuješ, že fotky jsou z veřejného prostranství, a souhlasíš s jejich zveřejněním pod
-                  licencí CC BY-SA 4.0.
-                </p>
-                <Turnstile siteKey={siteKey} />
-                <button class="btn btn-primary" type="submit">
-                  Nahrát fotky
-                </button>
-                <p class="form-msg" role="status"></p>
-              </form>
-            </details>
-
-            <details class="panel" id="upravit">
-              <summary>Navrhnout úpravu údajů</summary>
-              <EditForm house={house} mods={mods} siteKey={siteKey} />
-            </details>
-
-            <details class="panel" id="nahlasit">
-              <summary>Nahlásit problém nebo požádat o skrytí</summary>
-              <form class="ajax" action={`/api/houses/${house.id}/report`} method="post">
-                <label>
-                  Důvod
-                  <select name="kind" required>
-                    {Object.entries(REPORT_KINDS).map(([k, l]) => (
-                      <option value={k}>{l}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Popis
-                  <textarea name="message" rows={3} maxlength={2000}></textarea>
-                </label>
-                <label>
-                  Kontakt (nepovinný, jen pro moderátory)
-                  <input name="contact" maxlength={200} />
-                </label>
-                <Turnstile siteKey={siteKey} />
-                <button class="btn" type="submit">
-                  Odeslat
-                </button>
-                <p class="form-msg" role="status"></p>
-              </form>
-            </details>
-
-            {revisions.length > 0 && (
-              <details class="panel">
-                <summary>Historie změn</summary>
-                <ul class="history">
-                  {revisions.map((r) => (
-                    <li>
-                      <time>{formatDate(r.created_at)}</time> {r.summary}
-                      {r.changes && <span class="muted"> ({changedFields(r.changes)})</span>}
-                    </li>
+          <details class="panel" id="nahlasit">
+            <summary>Nahlásit problém nebo požádat o skrytí</summary>
+            <form class="ajax" action={`/api/houses/${house.id}/report`} method="post">
+              <label>
+                Důvod
+                <select name="kind" required>
+                  {Object.entries(REPORT_KINDS).map(([k, l]) => (
+                    <option value={k}>{l}</option>
                   ))}
-                </ul>
-              </details>
-            )}
-          </aside>
+                </select>
+              </label>
+              <label>
+                Popis
+                <textarea name="message" rows={3} maxlength={2000}></textarea>
+              </label>
+              <label>
+                Kontakt (nepovinný, jen pro moderátory)
+                <input name="contact" maxlength={200} />
+              </label>
+              <Turnstile siteKey={siteKey} />
+              <button class="btn" type="submit">
+                Odeslat
+              </button>
+              <p class="form-msg" role="status"></p>
+            </form>
+          </details>
+
+          {revisions.length > 0 && (
+            <details class="panel">
+              <summary>Historie změn</summary>
+              <ul class="history">
+                {revisions.map((r) => (
+                  <li>
+                    <time>{formatDate(r.created_at)}</time> {r.summary}
+                    {r.changes && <span class="muted"> ({changedFields(r.changes)})</span>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       </article>
     </Layout>,
   );
 });
-
-// Rohové domy bývají v panoramatu vidět z boční ulice. Tady jde zvolit místo, odkud se dívat (viz house.js).
-const CameraFix = ({ house, siteKey }: { house: House; siteKey: string }) => (
-  <details class="panel cam-fix" id="pohled">
-    <summary>Dům je na snímku malý, z boku nebo z jiné ulice? Oprav pohled</summary>
-    <form class="ajax" action={`/api/houses/${house.id}/camera`} method="post">
-      <CameraPicker h={house} />
-      <Turnstile siteKey={siteKey} />
-      <button class="btn btn-primary" type="submit" disabled>
-        Navrhnout tenhle pohled
-      </button>
-      <p class="form-msg" role="status"></p>
-    </form>
-  </details>
-);
-
-const people = (n: number) => `${n} ${n === 1 ? 'člověk' : n >= 2 && n <= 4 ? 'lidé' : 'lidí'}`;
-
-// Hlasování "je to šumperák?". Po rekonstrukci bývá původní tvar k nepoznání, proto rozhoduje komunita.
-const VoteBox = ({ houseId, votes, siteKey }: { houseId: number; votes: Votes; siteKey: string }) => {
-  const total = votes.yes + votes.no;
-  const share = total ? Math.round((votes.yes / total) * 100) : 0;
-  return (
-    <section class="vote" id="hlasovani" data-mine={votes.mine ?? ''}>
-      <h3>Je to šumperák?</h3>
-      <div class="vote-bar" role="img" aria-label={`Ano ${share} %, ne ${100 - share} %`} hidden={!total}>
-        <span class="vote-yes" style={`width:${share}%`}></span>
-      </div>
-      <p class="vote-summary muted small">
-        {total ? `Ano si myslí ${people(votes.yes)}, ne ${people(votes.no)}.` : 'Zatím nikdo nehlasoval.'}
-      </p>
-      <form class="ajax vote-form" action={`/api/houses/${houseId}/vote`} method="post">
-        <Turnstile siteKey={siteKey} />
-        <div class="vote-buttons">
-          <button class="btn" type="submit" name="vote" value="yes" aria-pressed={votes.mine === 1 ? 'true' : 'false'}>
-            👍 Ano
-          </button>
-          <button class="btn" type="submit" name="vote" value="no" aria-pressed={votes.mine === 0 ? 'true' : 'false'}>
-            👎 Ne
-          </button>
-        </div>
-        <p class="form-msg" role="status"></p>
-      </form>
-    </section>
-  );
-};
-
-const Comments = ({ houseId, comments, siteKey }: { houseId: number; comments: Comment[]; siteKey: string }) => (
-  <section class="comments" id="komentare">
-    <h2>Komentáře {comments.length > 0 && <span class="muted">({comments.length})</span>}</h2>
-    <ol class="comment-list">
-      {comments.map((k) => (
-        <li id={`komentar-${k.id}`}>
-          <header>
-            <strong>{k.nickname ?? 'Anonym'}</strong> <time class="muted">{formatDate(k.created_at)}</time>
-          </header>
-          <p>{k.body}</p>
-        </li>
-      ))}
-    </ol>
-    {comments.length === 0 && <p class="muted comment-empty">Zatím bez komentářů. Víš o domě něco víc?</p>}
-    <form class="ajax comment-form" action={`/api/houses/${houseId}/comments`} method="post">
-      <label>
-        Komentář
-        <textarea name="body" rows={3} minlength={3} maxlength={1000} required></textarea>
-        <span class="muted small char-count" data-max="1000"></span>
-      </label>
-      <label>
-        Přezdívka (nepovinná)
-        <input name="nickname" maxlength={40} autocomplete="nickname" />
-      </label>
-      <label class="hp" aria-hidden="true">
-        Nevyplňovat
-        <input name="website" tabindex={-1} autocomplete="off" />
-      </label>
-      <p class="muted small">
-        Komentáře jsou anonymní. Odkazy se zobrazí až po kontrole moderátorem. Nepiš osobní údaje o majitelích.
-      </p>
-      <Turnstile siteKey={siteKey} />
-      <button class="btn btn-primary" type="submit">
-        Přidat komentář
-      </button>
-      <p class="form-msg" role="status"></p>
-    </form>
-  </section>
-);
 
 const changedFields = (json: string) => {
   try {
@@ -585,45 +448,6 @@ const changedFields = (json: string) => {
     return '';
   }
 };
-
-const EditForm = ({ house, mods, siteKey }: { house: House; mods: string[]; siteKey: string }) => (
-  <form class="ajax" action={`/api/houses/${house.id}/edit`} method="post">
-    <input type="hidden" name="lat" value={String(house.lat)} />
-    <input type="hidden" name="lng" value={String(house.lng)} />
-    <input type="hidden" name="sv_heading" value={house.sv_heading ?? ''} />
-    <input type="hidden" name="sv_pitch" value={house.sv_pitch ?? ''} />
-    <input type="hidden" name="cam_lat" value={house.cam_lat ?? ''} />
-    <input type="hidden" name="cam_lng" value={house.cam_lng ?? ''} />
-    <input type="hidden" name="pano_fov" value={house.pano_fov ?? ''} />
-    <div class="row">
-      <label>
-        Ulice
-        <input name="street" maxlength={120} value={house.street ?? ''} />
-      </label>
-      <label>
-        Číslo
-        <input name="house_number" maxlength={20} value={house.house_number ?? ''} />
-      </label>
-    </div>
-    <label>
-      Obec
-      <input name="municipality" required maxlength={120} value={house.municipality} />
-    </label>
-    <label class="check">
-      <input type="checkbox" name="hide_number" value="1" checked={!!house.hide_number} /> Nezobrazovat číslo domu
-    </label>
-    <HouseFields house={house} mods={mods} />
-    <label>
-      Komentář pro moderátora
-      <textarea name="comment" rows={2} maxlength={1000}></textarea>
-    </label>
-    <Turnstile siteKey={siteKey} />
-    <button class="btn btn-primary" type="submit">
-      Odeslat návrh
-    </button>
-    <p class="form-msg" role="status"></p>
-  </form>
-);
 
 // ---------- Přidání domu ----------
 
@@ -771,7 +595,7 @@ pages.get('/promeny', async (c) => {
                 <img class="compare-before" src={photoUrl(h.before_key)} alt="Před rekonstrukcí" loading="lazy" />
                 <input type="range" min="0" max="100" value="50" aria-label="Posunout porovnání před a po" />
               </figure>
-              <a href={`/dum/${h.id}`}>
+              <a href={`/?dum=${h.id}`}>
                 <strong>{addressLine(h)}</strong>
               </a>
               {h.year_renovated && <span class="muted"> · rekonstrukce {h.year_renovated}</span>}
@@ -822,6 +646,9 @@ const listFilters = (q: (name: string) => string | undefined): Filter[] => {
   const from = rok && /^\d{4}$/.test(rok) ? Number(rok) : null;
   if (from)
     out.push({ param: 'rekonstrukce', value: String(from), label: `Rekonstrukce ${from}–${from + 4}`, where: 'h.year_renovated BETWEEN ? AND ?', args: [from, from + 4] });
+  const sklep = q('sklep');
+  if (sklep === 'ano' || sklep === 'ne')
+    out.push({ param: 'sklep', value: sklep, label: sklep === 'ano' ? 'Podsklepený' : 'Bez sklepa', where: 'h.basement = ?', args: [sklep === 'ano' ? 1 : 0] });
   const hlasy = q('hlasovani');
   if (isKey(VOTE_GROUPS, hlasy)) out.push({ param: 'hlasovani', value: hlasy, label: VOTE_GROUPS[hlasy].label, where: VOTE_GROUPS[hlasy].sql, args: [] });
   return out;
@@ -1032,7 +859,7 @@ pages.get('/statistiky', async (c) => {
               <ol class="disputed">
                 {disputedRows.map((h) => (
                   <li>
-                    <a href={`/dum/${h.id}#hlasovani`}>{addressLine(h) || h.municipality}</a>{' '}
+                    <a href={`/?dum=${h.id}`}>{addressLine(h) || h.municipality}</a>{' '}
                     <span class="muted small">
                       👍 {h.yes_votes} · 👎 {h.no_votes}
                     </span>

@@ -1,4 +1,4 @@
-import { FACADE_COLORS, MODIFICATIONS, PANO_ZOOMS, STATES, isKey } from '../domain';
+import { FACADE_COLORS, PANO_ZOOMS, STATES, isKey } from '../domain';
 import { addressLine, type House } from '../db';
 import type { Bindings } from '../env';
 import { mapyLink, mapyPanoStatic, streetViewEmbed, streetViewLink, streetViewStatic } from '../lib/streetview';
@@ -10,15 +10,6 @@ export const StateBadge = ({ state }: { state: string }) =>
     <span class="badge" style={`--c:${STATES[state].color}`}>
       {STATES[state].label}
     </span>
-  ) : null;
-
-export const ModList = ({ mods }: { mods: string[] }) =>
-  mods.length ? (
-    <ul class="tags">
-      {mods.filter((m) => isKey(MODIFICATIONS, m)).map((m) => (
-        <li>{MODIFICATIONS[m as keyof typeof MODIFICATIONS]}</li>
-      ))}
-    </ul>
   ) : null;
 
 export type CardHouse = Pick<House, 'id' | 'state' | 'street' | 'house_number' | 'hide_number' | 'municipality'> & {
@@ -51,7 +42,7 @@ const hideOnError = "this.parentElement.classList.add('pano-missing')";
 export const HouseCard = ({ h, keys }: { h: CardHouse & PanoHouse; keys: PanoKeys }) => {
   const img = h.photo ? photoUrl(h.photo) : panoUrl(keys, h, true);
   return (
-    <a class="card" href={`/dum/${h.id}`}>
+    <a class="card" href={`/?dum=${h.id}`}>
       <div class="card-img">
         {img && <img src={img} alt="" loading="lazy" onerror={hideOnError} />}
         <div class="card-noimg">Bez fotky</div>
@@ -130,13 +121,6 @@ export const CameraPicker = ({ h }: { h: PanoHouse & { state?: string } }) => (
     <input type="hidden" name="sv_pitch" value={h.sv_pitch ?? ''} />
   </div>
 );
-
-export const FacadeSwatch = ({ color }: { color: string | null }) =>
-  color && isKey(FACADE_COLORS, color) ? (
-    <span class="facade-swatch">
-      <span class="swatch" style={`--c:${FACADE_COLORS[color].hex}`}></span> {FACADE_COLORS[color].label}
-    </span>
-  ) : null;
 
 // Vzorník barev fasády. V režimu picker jde barvu vybrat i kliknutím do panoramatu (viz add.js).
 export const FacadeSwatches = ({ selected, picker }: { selected?: string | null; picker?: boolean }) => (
